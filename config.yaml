@@ -1,0 +1,28 @@
+app:
+  name: "App"
+  port: 8080
+  log_level: 6
+  prefork: false
+  timezone: "Asia/Jakarta"
+database:
+  connection: "postgres"
+  name: "oauth"
+  username: "postgres"
+  password: "postgres"
+  host: "127.0.0.1"
+  port: 5432
+  timezone: "Asia/Jakarta"
+  idle_connection: 10
+  max_connection: 100
+  max_life_time_connection: 600
+redis:
+  host: "localhost"
+  port: 6379
+  db: 0
+jwt:
+  secret_key_access_token: "$2a$10$rJStT4fS7teaYZnJ1PaGUuxAVEsCx6S5fM2CqjYet5R4mxA0VplSS"
+  secret_key_refresh_token: "$2a$10$c4NSKwJoMKFmVlV.DG1OQ.sXwGIGPHgf7FDUkQrMq4c.NhiWkFeFO"
+  jwt_issuer: "sda324dsa"
+  exipiration_hours_access_token: 1
+  exipiration_hours_refresh_token: 720
+encrypted_key: "N1PCdw3M2B1TfJhoaY2mL736p2vCUc47"
