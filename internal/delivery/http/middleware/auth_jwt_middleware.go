@@ -34,7 +34,7 @@ func (m *AuthJwtMiddleware) ValidateAccessToken(ctx *fiber.Ctx) error {
 	tokenEncrypt := parts[1]
 	claims, err := m.UseCase.VerifyAccessToken(ctx.UserContext(), tokenEncrypt)
 	if err != nil {
-		return ctx.Status(http.StatusUnauthorized).JSON(model.WebResponse[any]{Message: http.StatusText(http.StatusUnauthorized)})
+		return ctx.Status(http.StatusUnauthorized).JSON(model.WebResponse[any]{Message: err.Error()})
 	}
 	ctx.Locals("authJwt", claims)
 	return ctx.Next()
@@ -53,10 +53,6 @@ func (m *AuthJwtMiddleware) ValidateRefreshToken(ctx *fiber.Ctx) error {
 	}
 
 	tokenEncrypt := parts[1]
-	claims, err := m.UseCase.VerifyAccessToken(ctx.UserContext(), tokenEncrypt)
-	if err != nil {
-		return ctx.Status(http.StatusUnauthorized).JSON(model.WebResponse[any]{Message: http.StatusText(http.StatusUnauthorized)})
-	}
-	ctx.Locals("authJwt", claims)
+	ctx.Locals("refreshToken", tokenEncrypt)
 	return ctx.Next()
 }

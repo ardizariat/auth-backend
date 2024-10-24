@@ -35,8 +35,9 @@ func NewFiber(route *route.RouteApp, config *viper.Viper) *fiber.App {
 		helmet.New(),
 		requestid.New(),
 		logger.New(logger.Config{
-			Format:     "${locals:requestid} ${status} - ${method} ${path}\n",
-			TimeFormat: "02-Jan-2006",
+			Format: "${locals:requestid} ${time} ${status} - ${method} ${path}\n",
+			// TimeFormat: "02-Jan-2006",
+			TimeFormat: "15:04:05",
 			TimeZone:   config.GetString("app.timezone"),
 		}),
 	)

@@ -1,0 +1,28 @@
+app:
+  name: ""
+  port:
+  log_level:
+  prefork: false
+  timezone: ""
+database:
+  connection: ""
+  name: ""
+  username: ""
+  password: ""
+  host: ""
+  port:
+  timezone: ""
+  idle_connection:
+  max_connection:
+  max_life_time_connection:
+redis:
+  host: ""
+  port:
+  db:
+jwt:
+  secret_key_access_token: ""
+  secret_key_refresh_token: ""
+  jwt_issuer: ""
+  expiration_access_token: ""
+  expiration_refresh_token: ""
+encrypted_key: ""

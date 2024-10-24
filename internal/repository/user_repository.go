@@ -52,15 +52,6 @@ func (r *UserRepository) FindUserByUsernameOrEmail(database *gorm.DB, user *enti
 		Error
 }
 
-func (r *UserRepository) FindUserByCredentialID(database *gorm.DB, user *entity.User, id string) error {
-	return database.
-		Select("id", "credential_id", "name", "username", "email").
-		Where("credential_id = ?", id).
-		Where("deleted_at IS NULL").
-		Take(&user).
-		Error
-}
-
 func (r *UserRepository) FindUserByLoginUserID(database *gorm.DB, loginUser *model.LoginUserQueryResponse, loginUserId string) error {
 	var total int64
 	if err := database.Table("login_user").
@@ -84,7 +75,6 @@ func (r *UserRepository) FindUserByLoginUserID(database *gorm.DB, loginUser *mod
 				LIMIT 1`
 	return database.Raw(query, loginUserId).Scan(&loginUser).Error
 }
-
 func (r *UserRepository) CreateLoginUser(database *gorm.DB, entity *entity.LoginUser) error {
 	return database.Create(entity).Error
 }
@@ -92,4 +82,9 @@ func (r *UserRepository) CreateLoginUser(database *gorm.DB, entity *entity.Login
 func (r *UserRepository) UpdateUser(db *gorm.DB, user *entity.User) error {
 	query := "UPDATE users SET name = ?, username = ?, email = ?, is_active = ?, password = ?, verified_at = ?, last_login = ?, pin = ? WHERE id = ? AND deleted_at IS NULL"
 	return db.Exec(query, user.Name, user.Username, user.Email, user.IsActive, user.Password, user.VerifiedAt, user.LastLogin, user.Pin, user.ID).Error
+}
+
+func (r *UserRepository) UpdateLoginUser(db *gorm.DB, loginUser *entity.LoginUser) error {
+	query := "UPDATE login_user SET firebase_token = ?, model = ?, refresh_token = ? WHERE id = ?"
+	return db.Exec(query, loginUser.FirebaseToken, loginUser.Model, loginUser.RefreshToken, loginUser.ID).Error
 }

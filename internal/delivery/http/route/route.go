@@ -30,6 +30,7 @@ func (c *RouteApp) SetupRoutes(app *fiber.App) {
 func (c *RouteApp) guestApiRoute(app *fiber.App) {
 	api := app.Group("/api/v1")
 	{
+		api.Get("/refresh-token", c.AuthJwtMiddleware.ValidateRefreshToken, c.AuthController.VerifyRefreshToken)
 		api.Post("/register", c.AuthController.Register)
 		api.Post("/login", c.AuthController.Login)
 	}

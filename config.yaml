@@ -23,6 +23,6 @@ jwt:
   secret_key_access_token: "$2a$10$rJStT4fS7teaYZnJ1PaGUuxAVEsCx6S5fM2CqjYet5R4mxA0VplSS"
   secret_key_refresh_token: "$2a$10$c4NSKwJoMKFmVlV.DG1OQ.sXwGIGPHgf7FDUkQrMq4c.NhiWkFeFO"
   jwt_issuer: "sda324dsa"
-  exipiration_hours_access_token: 1
-  exipiration_hours_refresh_token: 720
+  expiration_access_token: "1m"
+  expiration_refresh_token: "168h"
 encrypted_key: "N1PCdw3M2B1TfJhoaY2mL736p2vCUc47"

@@ -194,9 +194,14 @@ func (u *AuthUseCase) Login(ctx context.Context, request *model.LoginUserRequest
 		return nil, apperror.NewAppError(http.StatusUnauthorized)
 	}
 
-	refreshToken, err := u.Jwt.GenerateRefreshToken(user.CredentialID)
+	refreshToken, err := u.Jwt.GenerateRefreshToken(loginUser.ID)
 	if err != nil {
 		return nil, apperror.NewAppError(http.StatusUnauthorized)
+	}
+
+	loginUser.RefreshToken = refreshToken
+	if err = u.UserRepository.UpdateLoginUser(u.Database, &loginUser); err != nil {
+		return nil, apperror.NewAppError(http.StatusUnauthorized, err.Error())
 	}
 
 	return &model.UserLoginResponse{
@@ -234,7 +239,7 @@ func (u *AuthUseCase) VerifyAccessToken(ctx context.Context, tokenEncrypt string
 	}
 	claims, err := u.Jwt.ValidateAccessToken(tokenEncrypt)
 	if err != nil {
-		return nil, apperror.NewAppError(http.StatusUnauthorized)
+		return nil, apperror.NewAppError(http.StatusUnauthorized, err.Error())
 	}
 
 	loginUser := new(model.LoginUserQueryResponse)
@@ -264,53 +269,75 @@ func (u *AuthUseCase) VerifyAccessToken(ctx context.Context, tokenEncrypt string
 	return response, nil
 }
 
-func (u *AuthUseCase) VerifyRefreshToken(ctx context.Context, tokenEncrypt string) (*model.UserProfileResponse, error) {
-	key := fmt.Sprintf("verify_refresh_token:%s", tokenEncrypt)
-	var expCache float64 = 5
-	verifyToken, err := u.Redis.Get(ctx, key).Result()
-	if err != nil && err != redis.Nil {
-		// Handle Redis error (other than key not found)
-		return nil, apperror.NewAppError(http.StatusUnauthorized, err.Error())
-	}
-	if err == nil {
-		// Declare a variable of the struct type
-		userProfileCache := new(model.UserProfileResponse)
-
-		// Unmarshal (convert) the JSON into the Go struct
-		err := json.Unmarshal([]byte(verifyToken), &userProfileCache)
-		if err != nil {
-			return nil, apperror.NewAppError(http.StatusUnauthorized, err.Error())
-		}
-		return userProfileCache, nil
-	}
+func (u *AuthUseCase) VerifyRefreshToken(ctx context.Context, tokenEncrypt string) (string, error) {
 	claims, err := u.Jwt.ValidateRefreshToken(tokenEncrypt)
 	if err != nil {
-		return nil, apperror.NewAppError(http.StatusUnauthorized)
+		return "", apperror.NewAppError(http.StatusUnauthorized, err.Error())
 	}
 
-	loginUser := new(model.LoginUserQueryResponse)
-	if err := u.UserRepository.FindUserByLoginUserID(u.Database, loginUser, claims.ID); err != nil {
+	user := new(model.LoginUserQueryResponse)
+	if err := u.UserRepository.FindUserByLoginUserID(u.Database, user, claims.ID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NewAppError(http.StatusUnauthorized)
+			return "", apperror.NewAppError(http.StatusUnauthorized)
 		}
-		return nil, apperror.NewAppError(http.StatusInternalServerError, err.Error())
+		return "", apperror.NewAppError(http.StatusInternalServerError, err.Error())
 	}
 
-	response := &model.UserProfileResponse{
-		ID:     loginUser.ID,
-		UserID: loginUser.UserID,
-		Name:   loginUser.Name,
-		Email:  loginUser.Email,
+	u.Logger.Infof("user : %v", user)
+
+	newToken, err := u.Jwt.GenerateAccessToken(claims.ID)
+	if err != nil {
+		return "", apperror.NewAppError(http.StatusUnauthorized)
 	}
 
-	// Key exists set data to redis
-	jsonData, err := json.Marshal(response)
-	if err != nil {
-		return nil, apperror.NewAppError(http.StatusUnauthorized)
-	}
-	err = u.Redis.Set(ctx, key, jsonData, time.Duration(expCache*float64(time.Minute))).Err()
-	if err != nil {
-		return nil, apperror.NewAppError(http.StatusUnauthorized, err.Error())
-	}
-	return response, nil
+	return newToken, nil
+
+	// key := fmt.Sprintf("verify_refresh_token:%s", tokenEncrypt)
+	// var expCache float64 = 5
+	// verifyToken, err := u.Redis.Get(ctx, key).Result()
+	// if err != nil && err != redis.Nil {
+	// 	// Handle Redis error (other than key not found)
+	// 	return apperror.NewAppError(http.StatusUnauthorized, err.Error())
+	// }
+	// if err == nil {
+	// 	// Declare a variable of the struct type
+	// 	userProfileCache := new(model.UserProfileResponse)
+
+	// 	// Unmarshal (convert) the JSON into the Go struct
+	// 	err := json.Unmarshal([]byte(verifyToken), &userProfileCache)
+	// 	if err != nil {
+	// 		return apperror.NewAppError(http.StatusUnauthorized, err.Error())
+	// 	}
+	// 	return nil
+	// }
+	// claims, err := u.Jwt.ValidateRefreshToken(tokenEncrypt)
+	// if err != nil {
+	// 	return apperror.NewAppError(http.StatusUnauthorized)
+	// }
+
+	// loginUser := new(model.LoginUserQueryResponse)
+	// if err := u.UserRepository.FindUserByLoginUserID(u.Database, loginUser, claims.ID); err != nil {
+	// 	if errors.Is(err, gorm.ErrRecordNotFound) {
+	// 		return apperror.NewAppError(http.StatusUnauthorized)
+	// 	}
+	// 	return apperror.NewAppError(http.StatusInternalServerError, err.Error())
+	// }
+
+	// response := &model.UserProfileResponse{
+	// 	ID:     loginUser.ID,
+	// 	UserID: loginUser.UserID,
+	// 	Name:   loginUser.Name,
+	// 	Email:  loginUser.Email,
+	// }
+
+	// // Key exists set data to redis
+	// jsonData, err := json.Marshal(response)
+	// if err != nil {
+	// 	return apperror.NewAppError(http.StatusUnauthorized)
+	// }
+	// err = u.Redis.Set(ctx, key, jsonData, time.Duration(expCache*float64(time.Minute))).Err()
+	// if err != nil {
+	// 	return apperror.NewAppError(http.StatusUnauthorized, err.Error())
+	// }
+	// return nil
 }

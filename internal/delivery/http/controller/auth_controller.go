@@ -82,3 +82,16 @@ func (c *AuthController) Profile(ctx *fiber.Ctx) error {
 	response := ctx.Locals("authJwt").(*model.UserProfileResponse)
 	return ctx.JSON(model.WebResponse[*model.UserProfileResponse]{Data: response})
 }
+
+func (m *AuthController) VerifyRefreshToken(ctx *fiber.Ctx) error {
+	refreshToken := ctx.Locals("refreshToken").(string)
+	response, err := m.AuthUseCase.VerifyRefreshToken(ctx.UserContext(), refreshToken)
+	if err != nil {
+		return ctx.Status(http.StatusUnauthorized).JSON(model.WebResponse[any]{Message: http.StatusText(http.StatusUnauthorized)})
+	}
+	return ctx.
+		JSON(model.WebResponse[string]{
+			Data:    response,
+			Message: "refresh token successfully",
+		})
+}
