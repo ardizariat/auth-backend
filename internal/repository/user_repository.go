@@ -84,7 +84,15 @@ func (r *UserRepository) UpdateUser(db *gorm.DB, user *entity.User) error {
 	return db.Exec(query, user.Name, user.Username, user.Email, user.IsActive, user.Password, user.VerifiedAt, user.LastLogin, user.Pin, user.ID).Error
 }
 
+func (r *UserRepository) FindByIdLoginUser(database *gorm.DB, entity *entity.LoginUser, id string) error {
+	return database.Where("id = ?", id).Take(&entity).Error
+}
+
 func (r *UserRepository) UpdateLoginUser(db *gorm.DB, loginUser *entity.LoginUser) error {
 	query := "UPDATE login_user SET firebase_token = ?, model = ?, refresh_token = ? WHERE id = ?"
 	return db.Exec(query, loginUser.FirebaseToken, loginUser.Model, loginUser.RefreshToken, loginUser.ID).Error
+}
+
+func (r *UserRepository) DeleteLoginUser(database *gorm.DB, entity *entity.LoginUser, id string) error {
+	return database.Where("id = ?", id).Delete(entity).Error
 }

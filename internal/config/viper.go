@@ -2,18 +2,27 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/viper"
 )
 
 func NewViper() *viper.Viper {
 	config := viper.New()
-	config.SetConfigName("config")        // name of config file (without extension)
-	config.SetConfigType("yaml")          // REQUIRED if the config file does not have the extension in the name
-	config.AddConfigPath("/etc/appname/") // path to look for the config file in
-	config.AddConfigPath(".")             // optionally look for config in the working directory
-	err := config.ReadInConfig()          // Find and read the config file
-	if err != nil {                       // Handle errors reading the config file
+	config.SetConfigName("config")
+	config.SetConfigType("yaml")
+
+	rootDir, _ := filepath.Abs(filepath.Dir(os.Args[0]))
+
+	// Add the root directory and other relative paths
+	config.AddConfigPath(rootDir)    // Root directory
+	config.AddConfigPath("./")       // Current directory
+	config.AddConfigPath("./../")    // One level up
+	config.AddConfigPath("./../../") // Two levels up (for tests run in deeper directories)
+
+	err := config.ReadInConfig()
+	if err != nil {
 		panic(fmt.Errorf("fatal error config file: %w", err))
 	}
 	return config

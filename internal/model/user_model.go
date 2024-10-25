@@ -27,6 +27,13 @@ type UserProfileResponse struct {
 	UserID string `json:"user_id,omitempty"`
 	Name   string `json:"name,omitempty"`
 	Email  string `json:"email,omitempty"`
+	Token  string `json:"token,omitempty"`
+}
+
+type UpdatePasswordLoginRequest struct {
+	ID          string `json:"id" validate:"required"`
+	OldPassword string `json:"old_password" validate:"required"`
+	Password    string `json:"password" validate:"required,min=3"`
 }
 
 type LoginUserQueryResponse struct {

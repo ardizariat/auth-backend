@@ -33,8 +33,18 @@ func (m *MockAuthService) Register(ctx context.Context, request *model.RegisterU
 
 	return response, args.Error(1)
 }
+func (m *MockAuthService) GetCurrentProfile(ctx context.Context, token string) (*model.UserProfileResponse, error) {
+	args := m.Called(ctx, token)
+	if user, ok := args.Get(0).(*model.UserProfileResponse); ok {
+		return user, args.Error(1)
+	}
+	return nil, args.Error(1)
+}
 
-// func (m *MockAuthService) Register(ctx context.Context, req model.RegisterRequest) (*model.RegisterResponse, error) {
-// 	args := m.Called(ctx, req)
-// 	return args.Get(0).(*model.RegisterResponse), args.Error(1)
-// }
+func (m *MockAuthService) RefreshToken(ctx context.Context, token string) (string, error) {
+	args := m.Called(ctx, token)
+	if newToken, ok := args.Get(0).(string); ok {
+		return newToken, args.Error(1)
+	}
+	return "", args.Error(1)
+}

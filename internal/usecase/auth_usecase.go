@@ -138,7 +138,7 @@ func (u *AuthUseCase) Login(ctx context.Context, request *model.LoginUserRequest
 
 	// if user exists, check login attempt
 	key := fmt.Sprintf("login_attempt:%s", user.ID)
-	var expCache float64 = 5
+	var expCache float64 = 5 // 5 minutes
 
 	loginAttemptString, err := u.Redis.Get(ctx, key).Result()
 	if err != nil && err != redis.Nil {
@@ -219,6 +219,18 @@ func (u *AuthUseCase) Login(ctx context.Context, request *model.LoginUserRequest
 }
 
 func (u *AuthUseCase) VerifyAccessToken(ctx context.Context, tokenEncrypt string) (*model.UserProfileResponse, error) {
+	// check blacklist token
+	blacklistKey := fmt.Sprintf("blacklist_access_token:%s", tokenEncrypt)
+	loginTokenExists, err := u.Redis.Get(ctx, blacklistKey).Result()
+	if err != nil && err != redis.Nil {
+		// Redis error, return unauthorized
+		return nil, apperror.NewAppError(http.StatusUnauthorized, err.Error())
+	}
+	// If `loginTokenExists` is not empty, it means the token is blacklisted
+	if loginTokenExists != "" {
+		return nil, apperror.NewAppError(http.StatusUnauthorized, "token is blacklisted and cannot be used")
+	}
+
 	key := fmt.Sprintf("verify_access_token:%s", tokenEncrypt)
 	var expCache float64 = 5
 	verifyAccessToken, err := u.Redis.Get(ctx, key).Result()
@@ -255,6 +267,7 @@ func (u *AuthUseCase) VerifyAccessToken(ctx context.Context, tokenEncrypt string
 		UserID: loginUser.UserID,
 		Name:   loginUser.Name,
 		Email:  loginUser.Email,
+		Token:  tokenEncrypt,
 	}
 
 	// Key exists set data to redis
@@ -291,4 +304,86 @@ func (u *AuthUseCase) VerifyRefreshToken(ctx context.Context, tokenEncrypt strin
 	}
 
 	return newToken, nil
+}
+
+func (u *AuthUseCase) UpdatePassword(ctx context.Context, request *model.UpdatePasswordLoginRequest) error {
+	tx := u.Database.WithContext(ctx).Begin()
+	defer tx.Rollback()
+
+	user := new(entity.User)
+	if err := u.UserRepository.FindById(tx, user, request.ID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			u.Logger.Warnf("Failed find user by user or email : %+v", err)
+			return apperror.NewAppError(http.StatusBadRequest)
+		}
+		return apperror.NewAppError(http.StatusInternalServerError, err.Error())
+	}
+
+	// check password user
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(request.OldPassword)); err != nil {
+		u.Logger.Warnf("Failed to compare user password with bcrype hash : %+v", err)
+		return apperror.NewAppError(http.StatusBadRequest, "password lama yang anda masukkan salah")
+	}
+
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(request.Password), bcrypt.DefaultCost)
+	if err != nil {
+		u.Logger.Warnf("Failed update suer : %+v", err)
+		return apperror.NewAppError(http.StatusInternalServerError, err.Error())
+	}
+
+	user.Password = string(passwordHash)
+	if err := u.UserRepository.UpdateUser(tx, user); err != nil {
+		u.Logger.Warnf("Failed update user : %+v", err)
+		return apperror.NewAppError(http.StatusInternalServerError, err.Error())
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		u.Logger.Warnf("Failed commit transaction : %+v", err)
+		return apperror.NewAppError(http.StatusInternalServerError, err.Error())
+	}
+
+	return nil
+}
+
+func (u *AuthUseCase) Logout(ctx context.Context, request *model.UserProfileResponse) error {
+	tx := u.Database.WithContext(ctx).Begin()
+	defer tx.Rollback()
+
+	// find login user in database
+	loginUser := new(entity.LoginUser)
+	if err := u.UserRepository.FindByIdLoginUser(u.Database, loginUser, request.ID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apperror.NewAppError(http.StatusUnauthorized)
+		}
+		return apperror.NewAppError(http.StatusInternalServerError, err.Error())
+	}
+
+	// delete row if exists
+	if err := u.UserRepository.DeleteLoginUser(tx, loginUser, request.ID); err != nil {
+		u.Logger.Warnf("Failed delete : %+v", err)
+		return apperror.NewAppError(http.StatusInternalServerError, err.Error())
+	}
+
+	// delete cache in redis
+	key := fmt.Sprintf("verify_access_token:%s", request.Token)
+	_, err := u.Redis.Del(ctx, key).Result()
+	if err != nil {
+		// Handle Redis error (other than key not found)
+		return apperror.NewAppError(http.StatusUnauthorized, err.Error())
+	}
+
+	// set data blacklist token in redis
+	var expCache float64 = 1 // 1 hours
+	blacklistKey := fmt.Sprintf("blacklist_access_token:%s", request.Token)
+	err = u.Redis.Set(ctx, blacklistKey, request.Token, time.Duration(expCache*float64(time.Hour))).Err()
+	if err != nil {
+		return apperror.NewAppError(http.StatusUnauthorized, err.Error())
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		u.Logger.Warnf("Failed commit transaction : %+v", err)
+		return apperror.NewAppError(http.StatusInternalServerError, err.Error())
+	}
+
+	return nil
 }

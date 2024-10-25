@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"arch/internal/helper/constants"
 	"arch/internal/model"
 	"arch/internal/usecase"
 	"net/http"
@@ -36,7 +37,7 @@ func (m *AuthJwtMiddleware) ValidateAccessToken(ctx *fiber.Ctx) error {
 	if err != nil {
 		return ctx.Status(http.StatusUnauthorized).JSON(model.WebResponse[any]{Message: err.Error()})
 	}
-	ctx.Locals("authJwt", claims)
+	ctx.Locals(constants.AUTH_JWT, claims)
 	return ctx.Next()
 }
 
@@ -53,6 +54,6 @@ func (m *AuthJwtMiddleware) ValidateRefreshToken(ctx *fiber.Ctx) error {
 	}
 
 	tokenEncrypt := parts[1]
-	ctx.Locals("refreshToken", tokenEncrypt)
+	ctx.Locals(constants.REFRESH_TOKEN, tokenEncrypt)
 	return ctx.Next()
 }
