@@ -1,28 +1,28 @@
 app:
-  name: ""
-  port:
-  log_level:
+  name: "App"
+  port: 8080
+  log_level: 6
   prefork: false
-  timezone: ""
+  timezone: "Asia/Jakarta"
 database:
-  connection: ""
-  name: ""
-  username: ""
-  password: ""
-  host: ""
-  port:
-  timezone: ""
-  idle_connection:
-  max_connection:
-  max_life_time_connection:
+  connection: "postgres"
+  name: "dbname"
+  username: "postgres"
+  password: "postgres"
+  host: "127.0.0.1"
+  port: 5432
+  timezone: "Asia/Jakarta"
+  idle_connection: 10
+  max_connection: 100
+  max_life_time_connection: 600
 redis:
-  host: ""
-  port:
-  db:
+  host: "localhost"
+  port: 6379
+  db: 0
 jwt:
-  secret_key_access_token: ""
-  secret_key_refresh_token: ""
-  jwt_issuer: ""
-  expiration_access_token: ""
-  expiration_refresh_token: ""
-encrypted_key: ""
+  secret_key_access_token: "secret_key_access_token"
+  secret_key_refresh_token: "secret_key_refresh_token"
+  jwt_issuer: "jwt_issuer"
+  expiration_access_token: "1h"
+  expiration_refresh_token: "1h"
+encrypted_key: "encrypted_key"
