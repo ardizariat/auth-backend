@@ -11,7 +11,7 @@ import (
 func NewViper() *viper.Viper {
 	config := viper.New()
 	config.SetConfigName("config")
-	config.SetConfigType("yaml")
+	config.SetConfigType("yml")
 
 	rootDir, _ := filepath.Abs(filepath.Dir(os.Args[0]))
 

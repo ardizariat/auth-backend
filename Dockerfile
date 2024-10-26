@@ -1,30 +1,30 @@
 # Build Stage
-FROM golang:1.23 AS build-stage
+FROM golang:1.23 AS builder
 
 WORKDIR /app
 
-# Copy all files and download dependencies
-COPY . .
-
-# Download dependencies
+# Copy go.mod and go.sum files and download dependencies
+COPY go.mod go.sum ./
 RUN go mod download
 
-# Build the Go app
-RUN CGO_ENABLED=0 GOOS=linux go build -o /goapp ./cmd/web/main.go
+# Copy the rest of the application files
+COPY . .
+
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux go build -o cmd/web/main ./cmd/web/main.go
 
 # Final Stage
-FROM gcr.io/distroless/base-debian11 AS build-release-stage
+FROM alpine:latest
 
-WORKDIR /
+# Install CA certificates for HTTPS requests
+RUN apk --no-cache add ca-certificates
 
-# Copy the built app
-COPY --from=build-stage /goapp /goapp
+# Set the working directory for the final image
+WORKDIR /root/
 
-# Copy the config.yaml file to the root directory in the final image
-COPY --from=build-stage /app/config.yaml /config.yaml
+# Copy the binary and the configuration file from the builder stage
+COPY --from=builder /app/cmd/web/main .
+COPY --from=builder /app/config.yml .
 
-EXPOSE 8080
-
-USER nonroot:nonroot
-
-ENTRYPOINT ["./goapp"]
+# Run the executable
+CMD ["./main"]

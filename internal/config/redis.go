@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/redis/go-redis/v9"
@@ -17,5 +18,12 @@ func NewRedis(config *viper.Viper) *redis.Client {
 		Password: password,
 		DB:       db,
 	})
+
+	// Ping the Redis server
+    ctx := context.Background()
+    _, err := client.Ping(ctx).Result()
+    if err != nil {
+		panic(fmt.Errorf("fatal error: %w", err))
+    }
 	return client
 }
