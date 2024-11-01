@@ -1,0 +1,20 @@
+CREATE TABLE employees (
+	id varchar(255) NOT NULL,
+	user_id varchar(255) NULL,
+	first_name varchar(255) NOT NULL,
+	last_name varchar(255) NULL,
+	gender varchar(50) NULL,
+	nip varchar(100) NULL,
+	personal_email varchar(100) NULL,
+	phone_number varchar(100) NULL,
+	join_date date NULL,
+	place_of_birth varchar(255) NULL,
+	date_of_birth date NULL,
+	address text NULL,
+	created_at timestamptz DEFAULT now() NOT NULL,
+	updated_at timestamptz DEFAULT now() NOT NULL,
+	deleted_at timestamptz NULL,
+	CONSTRAINT employees_pkey PRIMARY KEY (id),
+	CONSTRAINT employees_user_id_key UNIQUE (user_id),
+    CONSTRAINT employees_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE NO ACTION ON UPDATE CASCADE
+);

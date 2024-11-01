@@ -6,7 +6,6 @@ CREATE TABLE login_user (
 	firebase_token TEXT NULL,
 	model varchar(255) NULL,
 	refresh_token TEXT NULL,
-	issued_at timestamptz NULL,
 	created_at timestamptz DEFAULT now() NOT NULL,
 	updated_at timestamptz DEFAULT now() NOT NULL,
 	CONSTRAINT login_user_pkey PRIMARY KEY (id),

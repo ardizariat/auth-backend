@@ -1,3 +1,0 @@
-for connect network:
-docker network connect database redis_7
-docker network connect database postgres_16

@@ -11,6 +11,7 @@ import (
 	"arch/internal/delivery/http/controller"
 	"arch/internal/delivery/http/middleware"
 	"arch/internal/delivery/http/route"
+	"arch/internal/gateway/producer"
 	"arch/internal/repository"
 	"arch/internal/usecase"
 	"github.com/gofiber/fiber/v2"
@@ -23,10 +24,12 @@ func InitializeServer() *fiber.App {
 	viper := config.NewViper()
 	logger := config.NewLogger(viper)
 	db := config.NewDatabase(viper, logger)
-	userRepositoy := repository.NewUserRepository(logger)
+	userRepository := repository.NewUserRepository(logger)
 	client := config.NewRedis(viper)
 	jwtWrapper := config.NewJwtWrapper(viper)
-	authUseCase := usecase.NewAuthUseCase(db, userRepositoy, viper, logger, client, jwtWrapper)
+	rabbitMQClient := config.NewRabbitMQ(viper)
+	rabbitMQProducer := producer.NewRabbitMQProducer(rabbitMQClient)
+	authUseCase := usecase.NewAuthUseCase(db, userRepository, viper, logger, client, jwtWrapper, rabbitMQProducer)
 	authJwtMiddleware := middleware.NewAuthJwtMiddleware(authUseCase)
 	validate := config.NewValidator()
 	authController := controller.NewAuthController(validate, logger, authUseCase)
@@ -37,9 +40,11 @@ func InitializeServer() *fiber.App {
 
 // injector.go:
 
-var configSet = wire.NewSet(config.NewViper, config.NewLogger, config.NewDatabase, config.NewValidator, config.NewRedis, config.NewJwtWrapper)
+var configSet = wire.NewSet(config.NewViper, config.NewLogger, config.NewDatabase, config.NewValidator, config.NewRedis, config.NewJwtWrapper, config.NewRabbitMQ)
 
 var repositorySet = wire.NewSet(repository.NewUserRepository)
+
+var rabbitMQProducerSet = wire.NewSet(producer.NewRabbitMQProducer)
 
 var useCaseSet = wire.NewSet(usecase.NewAuthUseCase)
 

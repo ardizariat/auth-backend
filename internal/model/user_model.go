@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 type UserResponse struct {
 	ID       string `json:"id,omitempty"`
 	Name     string `json:"name,omitempty"`
@@ -43,22 +45,37 @@ type LoginUserQueryResponse struct {
 	Email  string `json:"email,omitempty"`
 }
 
+type LoginUserResponse struct {
+	ID            string    `json:"id,omitempty"`
+	UserID        string    `json:"user_id,omitempty"`
+	UserAgent     string    `json:"user_agent,omitempty"`
+	IpAddress     string    `json:"ip_address,omitempty"`
+	FirebaseToken *string   `json:"firebase_token,omitempty"`
+	Model         *string   `json:"model,omitempty"`
+	CreatedAt     time.Time `json:"created_at,omitempty"`
+}
+
 type LoginUserRequest struct {
-	User          string `json:"user" validate:"required,min=3"`
-	Password      string `json:"password" validate:"required,min=3"`
-	UserAgent     string `json:"user_agent"`
-	IpAddress     string `json:"ip_address"`
-	FirebaseToken string `json:"firebase_token"`
-	Model         string `json:"model"`
+	User          string  `json:"user" validate:"required,min=3"`
+	Password      string  `json:"password" validate:"required,min=3"`
+	UserAgent     string  `json:"user_agent"`
+	IpAddress     string  `json:"ip_address"`
+	FirebaseToken *string `json:"firebase_token"`
+	Model         *string `json:"model"`
 }
 
 type RegisterUserRequest struct {
-	Name          string `json:"name" validate:"required,min=1"`
-	Username      string `json:"username" validate:"required,min=3"`
-	Email         string `json:"email" validate:"required,min=3,email"`
-	Password      string `json:"password" validate:"required,min=3"`
-	UserAgent     string `json:"user_agent"`
-	IpAddress     string `json:"ip_address"`
-	FirebaseToken string `json:"firebase_token"`
-	Model         string `json:"model"`
+	Name          string  `json:"name" validate:"required,min=1"`
+	Username      string  `json:"username" validate:"required,min=3"`
+	Email         string  `json:"email" validate:"required,min=3,email"`
+	Password      string  `json:"password" validate:"required,min=3"`
+	UserAgent     string  `json:"user_agent"`
+	IpAddress     string  `json:"ip_address"`
+	FirebaseToken *string `json:"firebase_token"`
+	Model         *string `json:"model"`
+	Pin           *uint16 `json:"pin"`
+}
+
+type ForceLogoutRequest struct {
+	IDs []string `json:"ids" validate:"required,min=1"`
 }

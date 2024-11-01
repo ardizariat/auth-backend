@@ -12,8 +12,13 @@ func UserToResponse(user *entity.User) *model.UserResponse {
 	}
 }
 
-// func UserToTokenResponse(user *entity.User) *model.UserResponse {
-// 	return &model.UserResponse{
-// 		Token: user.CredentialID,
-// 	}
-// }
+func LoginUserToResponse(loginUser *entity.LoginUser) *model.LoginUserResponse {
+	return &model.LoginUserResponse{
+		ID:            loginUser.ID,
+		UserID:        loginUser.UserID,
+		IpAddress:     loginUser.IpAddress,
+		Model:         loginUser.Model,
+		FirebaseToken: loginUser.FirebaseToken,
+		CreatedAt:     loginUser.CreatedAt,
+	}
+}

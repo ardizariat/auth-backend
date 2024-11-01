@@ -1,0 +1,31 @@
+version: "3.8"
+
+services:
+  arch:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: arch:1.0
+    restart: on-failure
+    ports:
+      - "8080:8080"
+    environment:
+      # - DATABASE_HOST=postgres-16
+      # - DATABASE_PORT=5432
+      # - DATABASE_USER=postgres
+      # - DATABASE_PASSWORD=postgres
+      - DATABASE_HOST=10.1.20.70
+      - DATABASE_PORT=5432
+      - DATABASE_USER=ardi
+      - DATABASE_PASSWORD=modern888
+      - DATABASE_NAME=oauth
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    networks:
+      - database
+volumes:
+  postgres_data:
+
+networks:
+  database:
+    external: true

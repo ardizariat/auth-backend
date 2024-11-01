@@ -40,7 +40,9 @@ func (c *RouteApp) protectedApiRoute(app *fiber.App) {
 	api := app.Group("/api/v1").Use(c.AuthJwtMiddleware.ValidateAccessToken)
 	{
 		api.Get("/profile", c.AuthController.Profile)
+		api.Get("/my-login", c.AuthController.FindLoginUserByUserId)
 		api.Patch("/update-password", c.AuthController.UpdatePassword)
+		api.Delete("/force-logout", c.AuthController.ForceLogout)
 		api.Delete("/logout", c.AuthController.Logout)
 	}
 }

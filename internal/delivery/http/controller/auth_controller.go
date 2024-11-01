@@ -147,3 +147,37 @@ func (c *AuthController) Logout(ctx *fiber.Ctx) error {
 
 	return ctx.JSON(model.WebResponse[*model.UserProfileResponse]{Message: "logout successfully"})
 }
+
+func (c *AuthController) ForceLogout(ctx *fiber.Ctx) error {
+	request := new(model.ForceLogoutRequest)
+
+	if err := ctx.BodyParser(request); err != nil {
+		return apperror.HandleError(ctx, c.Logger, apperror.NewAppError(http.StatusBadRequest, err.Error()))
+	}
+
+	if err := c.Validator.Struct(request); err != nil {
+		return apperror.HandleError(ctx, c.Logger, err)
+	}
+
+	if err := c.AuthUseCase.ForceLogout(ctx.UserContext(), request); err != nil {
+		return apperror.HandleError(ctx, c.Logger, err)
+	}
+
+	return ctx.JSON(model.WebResponse[string]{Message: "force logout successfully and wait 3 minutes for synchronization"})
+}
+
+func (c *AuthController) FindLoginUserByUserId(ctx *fiber.Ctx) error {
+	authJwt, ok := ctx.Locals(constants.AUTH_JWT).(*model.UserProfileResponse)
+	if !ok || authJwt == nil {
+		return ctx.Status(http.StatusUnauthorized).JSON(model.WebResponse[*model.UserProfileResponse]{
+			Message: http.StatusText(http.StatusUnauthorized),
+		})
+	}
+
+	response, err := c.AuthUseCase.FindLoginUserByUserId(ctx.UserContext(), authJwt.UserID)
+	if err != nil {
+		return apperror.HandleError(ctx, c.Logger, err)
+	}
+
+	return ctx.JSON(model.WebResponse[[]model.LoginUserResponse]{Message: "get login user successfully", Data: response})
+}

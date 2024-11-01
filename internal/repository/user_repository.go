@@ -45,7 +45,6 @@ func (r *UserRepository) CountUserByEmail(database *gorm.DB, email string) (int6
 
 func (r *UserRepository) FindUserByUsernameOrEmail(database *gorm.DB, user *entity.User, id string) error {
 	return database.
-		Select("id", "credential_id", "name", "username", "email", "password").
 		Where("username = ? OR email = ?", id, id).
 		Where("deleted_at IS NULL").
 		Take(&user).
@@ -61,7 +60,7 @@ func (r *UserRepository) FindUserByLoginUserID(database *gorm.DB, loginUser *mod
 	}
 
 	if total == 0 {
-		return apperror.NewAppError(http.StatusNotFound, "Login user not found")
+		return apperror.NewAppError(http.StatusNotFound, "login user not found")
 	}
 
 	query := `SELECT
@@ -79,13 +78,31 @@ func (r *UserRepository) CreateLoginUser(database *gorm.DB, entity *entity.Login
 	return database.Create(entity).Error
 }
 
-func (r *UserRepository) UpdateUser(db *gorm.DB, user *entity.User) error {
+func (r *UserRepository) UpdateUser(database *gorm.DB, user *entity.User) error {
 	query := "UPDATE users SET name = ?, username = ?, email = ?, is_active = ?, password = ?, verified_at = ?, last_login = ?, pin = ? WHERE id = ? AND deleted_at IS NULL"
-	return db.Exec(query, user.Name, user.Username, user.Email, user.IsActive, user.Password, user.VerifiedAt, user.LastLogin, user.Pin, user.ID).Error
+	return database.Exec(query, user.Name, user.Username, user.Email, user.IsActive, user.Password, user.VerifiedAt, user.LastLogin, user.Pin, user.ID).Error
 }
 
 func (r *UserRepository) FindByIdLoginUser(database *gorm.DB, entity *entity.LoginUser, id string) error {
 	return database.Where("id = ?", id).Take(&entity).Error
+}
+
+func (r *UserRepository) FindLoginUserByUserId(database *gorm.DB, userID string) ([]entity.LoginUser, error) {
+	var loginUser []entity.LoginUser
+	if err := database.Where("user_id = ?", userID).Find(&loginUser).Error; err != nil {
+		return nil, err
+	}
+	return loginUser, nil
+}
+
+func (r *UserRepository) CountLoginUser(database *gorm.DB, userID string) (int64, error) {
+	var total int64
+	if err := database.Table("login_user").
+		Where("user_id = ?", userID).
+		Count(&total).Error; err != nil {
+		return 0, err
+	}
+	return total, nil
 }
 
 func (r *UserRepository) UpdateLoginUser(db *gorm.DB, loginUser *entity.LoginUser) error {
@@ -95,4 +112,9 @@ func (r *UserRepository) UpdateLoginUser(db *gorm.DB, loginUser *entity.LoginUse
 
 func (r *UserRepository) DeleteLoginUser(database *gorm.DB, entity *entity.LoginUser, id string) error {
 	return database.Where("id = ?", id).Delete(entity).Error
+}
+
+func (r *UserRepository) DeleteMultipleLoginUser(database *gorm.DB, ids []string) error {
+	query := "DELETE FROM login_user WHERE id IN (?)"
+	return database.Exec(query, ids).Error
 }
