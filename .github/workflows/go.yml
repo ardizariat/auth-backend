@@ -38,7 +38,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Push Image Dockerhub
-        run: docker push ardizariat/app-golang
+        run: docker push ardizariat/app-golang:latest
 
   # build:
   #   runs-on: ubuntu-22.04
