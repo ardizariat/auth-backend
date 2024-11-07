@@ -41,15 +41,32 @@ jobs:
         run: docker push ardizariat/goapp:latest
 
   # build:
-  #   needs: build-image
   #   runs-on: ubuntu-22.04
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
 
   #     - name: Set up Go
   #       uses: actions/setup-go@v4
   #       with:
   #         go-version: "1.23.2"
 
-  #     - name: Build
-  #       run: go build -v ./...
+  #     - name: Run Test
+  #       run: go test -v ./... -cover
+
+  # build-image:
+  #   name: Build Image Docker
+  #   runs-on: ubuntu-22.04
+  #   needs: running-test
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #     - name: Build Image Docker
+  #       run: docker build -t ardizariat/goapp:latest -f Dockerfile.dev .
+  #     - name: Login To Dockerhub
+  #       uses: docker/login-action@v1
+  #       with:
+  #         username: ${{ secrets.DOCKERHUB_USERNAME }}
+  #         password: ${{ secrets.DOCKERHUB_TOKEN }}
+  #     - name: Push Image Dockerhub
+  #       run: docker push ardizariat/goapp:latest
