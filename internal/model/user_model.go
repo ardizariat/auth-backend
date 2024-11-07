@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"mime/multipart"
+	"time"
+)
 
 type UserResponse struct {
 	ID       string `json:"id,omitempty"`
@@ -78,4 +81,14 @@ type RegisterUserRequest struct {
 
 type ForceLogoutRequest struct {
 	IDs []string `json:"ids" validate:"required,min=1"`
+}
+
+type UploadPhotoProfile struct {
+	ID    string                  `json:"id"`
+	Files []*multipart.FileHeader `json:"files"`
+}
+
+type AwsS3UploadMessage struct {
+	FileBuffer []byte `json:"file_buffer"`
+	Directory  string `json:"directory"`
 }

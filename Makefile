@@ -1,5 +1,5 @@
 # Makefile
-APP_NAME = goauth
+APP_NAME = oauth
 SRC_DIR = ./cmd/web
 BUILD_DIR = ./bin
 GO_FILES = $(wildcard $(SRC_DIR)/*.go)
@@ -29,7 +29,7 @@ run: build
 test:
 	@echo "Running tests..."
 #go test -v ./... -cover
-	go test -v -coverprofile=coverage.out ./...
+	go test -v ./...
 
 # Clean build artifacts
 .PHONY: clean

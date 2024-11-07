@@ -4,25 +4,42 @@ app:
   log_level: 6
   prefork: false
   timezone: "Asia/Jakarta"
+
 database:
   connection: "postgres"
-  name: "dbname"
-  username: "postgres"
+  name: "postgres"
+  user: "postgres"
   password: "postgres"
-  host: "127.0.0.1"
+  host: "localhost"
   port: 5432
   timezone: "Asia/Jakarta"
   idle_connection: 10
   max_connection: 100
   max_life_time_connection: 600
+
 redis:
   host: "localhost"
   port: 6379
   db: 0
+
 jwt:
-  secret_key_access_token: "secret_key_access_token"
-  secret_key_refresh_token: "secret_key_refresh_token"
-  jwt_issuer: "jwt_issuer"
+  secret_key_access_token: ""
+  secret_key_refresh_token: ""
+  jwt_issuer: "sda324dsa"
   expiration_access_token: "1h"
   expiration_refresh_token: "1h"
-encrypted_key: "encrypted_key"
+encrypted_key: ""
+
+rabbitmq:
+  user: "guest"
+  password: "guest"
+  host: "localhost"
+  port: 5672
+  virtual_host: /
+
+aws:
+  s3:
+    access_key: 
+    secret_key: 
+    region: 
+    bucket: 

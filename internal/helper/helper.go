@@ -1,11 +1,20 @@
 package helper
 
 import (
+	"arch/internal/helper/constants"
+	"arch/pkg/apperror"
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"io"
+	"math/big"
+	"mime/multipart"
+	"net/http"
+	"path/filepath"
+	"time"
 )
 
 const KEY = "N1PCdw3M2B1TfJhoaY2mL736p2vCUc47"
@@ -70,4 +79,64 @@ func Decrypt(cipherText string) (string, error) {
 
 	// Convert the plain text bytes to a string
 	return string(plainTextBytes), nil
+}
+
+func GetStringFromFormValue(form *multipart.Form, fieldName string) string {
+	if values, ok := form.Value[fieldName]; ok && len(values) > 0 {
+		return values[0]
+	}
+	return ""
+}
+
+func GenerateCustomFilename(originalFilename string) string {
+	timestamp := time.Now().UnixNano()
+	randomStr := generateRandomString(8)
+	extension := filepath.Ext(originalFilename)
+	filename := fmt.Sprintf("%d_%s%s", timestamp, randomStr, extension)
+	return filename
+}
+
+func generateRandomString(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	result := make([]byte, length)
+	for i := range result {
+		num, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		result[i] = charset[num.Int64()]
+	}
+	return string(result)
+}
+
+func ReadFileToBuffer(file *multipart.FileHeader) (*bytes.Buffer, error) {
+	f, err := file.Open()
+	if err != nil {
+		return nil, apperror.NewAppError(http.StatusInternalServerError, err.Error())
+	}
+	defer f.Close()
+
+	buf := new(bytes.Buffer)
+	if _, err = io.Copy(buf, f); err != nil {
+		return nil, apperror.NewAppError(http.StatusInternalServerError, err.Error())
+	}
+
+	return buf, nil
+}
+
+func ValidateFileExtension(file *multipart.FileHeader, allowedFiles []string, maxFileSize int64) error {
+	if file.Size > maxFileSize {
+		return apperror.NewAppError(http.StatusBadRequest, fmt.Sprintf("Ukuran file maksimal %d MB", constants.MAX_SIZE_FILE_APPROVAL_ATTACHMENT))
+	}
+
+	mimetype := file.Header.Get("Content-Type")
+	isValidFileType := false
+	for _, allowedType := range allowedFiles {
+		if mimetype == allowedType {
+			isValidFileType = true
+			break
+		}
+	}
+	if !isValidFileType {
+		return apperror.NewAppError(http.StatusBadRequest, "Invalid file type. Only JPEG, PNG, PDF, and MP4 are allowed")
+	}
+
+	return nil
 }
