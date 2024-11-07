@@ -1,12 +1,14 @@
 package controller
 
 import (
+	"arch/internal/helper"
 	"arch/internal/helper/constants"
 	"arch/internal/model"
 	"arch/internal/usecase"
 	"arch/pkg/apperror"
 	"net/http"
 
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"github.com/sirupsen/logrus"
@@ -180,4 +182,33 @@ func (c *AuthController) FindLoginUserByUserId(ctx *fiber.Ctx) error {
 	}
 
 	return ctx.JSON(model.WebResponse[[]model.LoginUserResponse]{Message: "get login user successfully", Data: response})
+}
+
+func (c *AuthController) UploadPhotoProfile(ctx *fiber.Ctx) error {
+	form, err := ctx.MultipartForm()
+	if err != nil {
+		return apperror.HandleError(ctx, c.Logger, err)
+	}
+	request := new(model.UploadPhotoProfile)
+
+	// if err := c.Validator.Struct(request); err != nil {
+	// 	return apperror.HandleError(ctx, c.Logger, err)
+	// }
+
+	request.ID = helper.GetStringFromFormValue(form, "id")
+	request.Files = form.File["files"]
+
+	if err = c.AuthUseCase.UploadPhotoProfile(ctx.UserContext(), request); err != nil {
+		return apperror.HandleError(ctx, c.Logger, err)
+	}
+
+	return ctx.JSON(model.WebResponse[string]{Message: "upload user successfully"})
+}
+
+func (c *AuthController) GetPhotoProfile(ctx *fiber.Ctx) error {
+	response, err := c.AuthUseCase.GetPhotoProfile(ctx.UserContext())
+	if err != nil {
+		return apperror.HandleError(ctx, c.Logger, err)
+	}
+	return ctx.JSON(model.WebResponse[*v4.PresignedHTTPRequest]{Data: response})
 }

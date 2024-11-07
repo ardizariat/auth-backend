@@ -5,10 +5,11 @@ import (
 	"fmt"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
-func NewRedis(config *viper.Viper) *redis.Client {
+func NewRedis(config *viper.Viper, log *logrus.Logger) *redis.Client {
 	host := config.GetString("redis.host")
 	port := config.GetInt("redis.port")
 	password := config.GetString("redis.password")
@@ -20,10 +21,11 @@ func NewRedis(config *viper.Viper) *redis.Client {
 	})
 
 	// Ping the Redis server
-    ctx := context.Background()
-    _, err := client.Ping(ctx).Result()
-    if err != nil {
-		panic(fmt.Errorf("fatal error: %w", err))
-    }
+	ctx := context.Background()
+	_, err := client.Ping(ctx).Result()
+
+	if err != nil {
+		log.Fatalf("fatal error connect: %v", err)
+	}
 	return client
 }

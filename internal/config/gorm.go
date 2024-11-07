@@ -22,7 +22,7 @@ func NewDatabase(viper *viper.Viper, log *logrus.Logger) *gorm.DB {
 }
 
 func newDatabasePostgresConnection(viper *viper.Viper, log *logrus.Logger) *gorm.DB {
-	username := viper.GetString("database.username")
+	user := viper.GetString("database.user")
 	password := viper.GetString("database.password")
 	host := viper.GetString("database.host")
 	port := viper.GetInt("database.port")
@@ -34,7 +34,7 @@ func newDatabasePostgresConnection(viper *viper.Viper, log *logrus.Logger) *gorm
 
 	dsn := fmt.Sprintf(
 		"host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=%s",
-		host, username, password, database, port, timezone,
+		host, user, password, database, port, timezone,
 	)
 
 	psql, err := gorm.Open(postgres.Open(dsn), &gorm.Config{

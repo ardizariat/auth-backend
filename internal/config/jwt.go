@@ -2,13 +2,13 @@ package config
 
 import (
 	"arch/pkg/appjwt"
-	"log"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
-func NewJwtWrapper(config *viper.Viper) *appjwt.JwtWrapper {
+func NewJwtWrapper(config *viper.Viper, log *logrus.Logger) *appjwt.JwtWrapper {
 	// Parse the durations using time.ParseDuration
 	expirationAccessToken, err := time.ParseDuration(config.GetString("jwt.expiration_access_token"))
 	if err != nil {

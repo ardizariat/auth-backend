@@ -18,12 +18,12 @@ import (
 
 var configSet = wire.NewSet(
 	config.NewViper,
-	config.NewLogger,
+	config.NewLogrus,
 	config.NewDatabase,
 	config.NewValidator,
 	config.NewRedis,
 	config.NewJwtWrapper,
-	config.NewRabbitMQ,
+	config.NewAwsS3,
 )
 var repositorySet = wire.NewSet(repository.NewUserRepository)
 var rabbitMQProducerSet = wire.NewSet(producer.NewRabbitMQProducer)
@@ -34,8 +34,8 @@ var middlewareSet = wire.NewSet(middleware.NewAuthJwtMiddleware)
 func InitializeServer() *fiber.App {
 	wire.Build(
 		configSet,
-		rabbitMQProducerSet,
 		repositorySet,
+		rabbitMQProducerSet,
 		useCaseSet,
 		controllerSet,
 		middlewareSet,

@@ -20,7 +20,6 @@ func StartApplication(r *fiber.App, viper *viper.Viper) {
 	if err != nil {
 		panic(err)
 	}
-
 }
 
 func ShutdownApplication(r *fiber.App) {

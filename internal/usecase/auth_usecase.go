@@ -3,6 +3,9 @@ package usecase
 import (
 	"arch/internal/entity"
 	"arch/internal/gateway/producer"
+	"arch/internal/helper"
+	"arch/internal/helper/constants"
+	s3_aws "arch/internal/helper/s3aws"
 	"arch/internal/model"
 	"arch/internal/model/converter"
 	"arch/internal/repository"
@@ -12,10 +15,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"time"
 
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -24,32 +30,43 @@ import (
 	"gorm.io/gorm"
 )
 
+var (
+	MODULE                    = "users"
+	CURRENT_YEAR       int    = time.Now().Year()
+	CURRENT_MONTH      int    = int(time.Now().Month())
+	PREFIX_FILE_UPLOAD string = fmt.Sprintf("%s/%d/%d", MODULE, CURRENT_YEAR, CURRENT_MONTH)
+)
+
 type AuthUseCase struct {
-	Database       *gorm.DB
-	UserRepository *repository.UserRepository
 	Config         *viper.Viper
 	Logger         *logrus.Logger
+	Database       *gorm.DB
 	Redis          *redis.Client
 	Jwt            *appjwt.JwtWrapper
 	ProducerRMQ    *producer.RabbitMQProducer
+	AwsS3          *s3.Client
+	UserRepository *repository.UserRepository
 }
 
-func NewAuthUseCase(database *gorm.DB,
-	userRepository *repository.UserRepository,
+func NewAuthUseCase(
 	config *viper.Viper,
 	logger *logrus.Logger,
+	database *gorm.DB,
 	redis *redis.Client,
 	jwt *appjwt.JwtWrapper,
 	producerRMQ *producer.RabbitMQProducer,
+	awsS3 *s3.Client,
+	userRepository *repository.UserRepository,
 ) *AuthUseCase {
 	return &AuthUseCase{
-		Database:       database,
-		UserRepository: userRepository,
 		Config:         config,
 		Logger:         logger,
+		Database:       database,
 		Redis:          redis,
 		Jwt:            jwt,
 		ProducerRMQ:    producerRMQ,
+		AwsS3:          awsS3,
+		UserRepository: userRepository,
 	}
 }
 
@@ -291,7 +308,11 @@ func (u *AuthUseCase) VerifyAccessToken(ctx context.Context, tokenEncrypt string
 		if err != nil {
 			return nil, apperror.NewAppError(http.StatusUnauthorized, err.Error())
 		}
-
+		// userProfileCacheJson, err := json.Marshal(userProfileCache)
+		// if err != nil {
+		// 	return nil, apperror.NewAppError(http.StatusUnauthorized, err.Error())
+		// }
+		// u.ProducerRMQ.PublishMessage(ctx, "notification", "fcm", "application/json", []byte(userProfileCacheJson))
 		return userProfileCache, nil
 	}
 	claims, err := u.Jwt.ValidateAccessToken(tokenEncrypt)
@@ -325,10 +346,6 @@ func (u *AuthUseCase) VerifyAccessToken(ctx context.Context, tokenEncrypt string
 		return nil, apperror.NewAppError(http.StatusUnauthorized, err.Error())
 	}
 
-	// if routingKey, ok := constants.RabbitMQMaster.GetRoutingKey("notification", "email"); ok {
-	// 	u.ProducerRMQ.PublishMessage("notification", routingKey, []byte(response.Email))
-	// }
-	u.ProducerRMQ.PublishMessage("notification", "email", []byte(response.Email))
 	return response, nil
 }
 
@@ -345,8 +362,6 @@ func (u *AuthUseCase) VerifyRefreshToken(ctx context.Context, tokenEncrypt strin
 		}
 		return "", apperror.NewAppError(http.StatusInternalServerError, err.Error())
 	}
-
-	u.Logger.Infof("user : %v", user)
 
 	newToken, err := u.Jwt.GenerateAccessToken(claims.ID)
 	if err != nil {
@@ -462,6 +477,76 @@ func (u *AuthUseCase) ForceLogout(ctx context.Context, request *model.ForceLogou
 	if err := tx.Commit().Error; err != nil {
 		u.Logger.Warnf("Failed commit transaction : %+v", err)
 		return apperror.NewAppError(http.StatusInternalServerError, err.Error())
+	}
+	return nil
+}
+
+func (u *AuthUseCase) UploadPhotoProfile(ctx context.Context, request *model.UploadPhotoProfile) error {
+	if err := u.putFiles(ctx, request.Files, request.ID); err != nil {
+		return apperror.NewAppError(http.StatusBadRequest, err.Error())
+	}
+	return nil
+}
+
+func (u *AuthUseCase) GetPhotoProfile(ctx context.Context) (*v4.PresignedHTTPRequest, error) {
+	objectKey := "users/2024/11/1/1730872668971544852_RoYH0lQ0.png"
+	presigned, err := s3_aws.GetObjectFromS3(ctx, u.AwsS3, u.Config.GetString("aws.s3.bucket"), objectKey)
+	if err != nil {
+		return nil, apperror.NewAppError(http.StatusBadRequest, err.Error())
+	}
+	return presigned, nil
+}
+
+func (u *AuthUseCase) putFiles(ctx context.Context, files []*multipart.FileHeader, userId string) error {
+	if len(files) > 10 {
+		return errors.New("too many files, max 10 files")
+	}
+	var errorMessage string
+
+	var messages []model.AwsS3UploadMessage
+	// Process and upload files if needed
+	for _, file := range files {
+		// Validate file size (e.g., max 100 MB)
+		if err := helper.ValidateFileExtension(file, constants.ALLOWED_FILE_UPLOAD_APPROVAL_ATTACHMENT, constants.MAX_SIZE_FILE_APPROVAL_ATTACHMENT); err != nil {
+			errorMessage = err.Error()
+			break
+		}
+
+		buf, err := helper.ReadFileToBuffer(file)
+		if err != nil {
+			errorMessage = err.Error()
+			break
+		}
+
+		// Create the message
+		filename := helper.GenerateCustomFilename(file.Filename)
+		directory := fmt.Sprintf("%s/%s/%s", PREFIX_FILE_UPLOAD, userId, filename)
+
+		// create message fro rabbitmq
+		message := model.AwsS3UploadMessage{
+			Directory:  directory,
+			FileBuffer: buf.Bytes(),
+		}
+		messages = append(messages, message)
+	}
+	if errorMessage != "" {
+		return errors.New(errorMessage)
+	}
+
+	if len(messages) > 0 {
+		for _, message := range messages {
+			// convert message to byte
+			messageBody, err := json.Marshal(message)
+			if err != nil {
+				errorMessage = err.Error()
+				break
+			}
+			// send to rabbitmq for upload file to aws s3
+			u.ProducerRMQ.PublishMessage(ctx, "aws", "s3_put_object", "application/json", messageBody)
+		}
+	}
+	if errorMessage != "" {
+		return errors.New(errorMessage)
 	}
 	return nil
 }

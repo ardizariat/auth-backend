@@ -7,6 +7,7 @@
 #
 # Binaries for programs and plugins
 *.exe
+.env
 *.exe~
 *.dll
 *.so
@@ -14,6 +15,8 @@
 
 # Config ENV
 config.yaml
+config-*.yaml
+config-docker.yaml
 
 # Test binary, built with `go test -c`
 *.test
@@ -176,4 +179,4 @@ Temporary Items
 # iCloud generated files
 *.icloud
 
-# End of https://www.toptal.com/developers/gitignore/api/macos,go,goland
+# End of https://www.toptal.com/developers/gitignore/api/macos,go,golandconfig-docker.yaml
