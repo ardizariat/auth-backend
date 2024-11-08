@@ -1,0 +1,39 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    # image: ardizariat/goapp:latest
+    container_name: go-app
+    restart: on-failure
+    ports:
+      - "8181:8181"
+    env_file:
+      - .env
+    # environment:
+    #   - DATABASE_HOST=postgres-16
+    #   - DATABASE_PORT=5432
+    #   - DATABASE_USER=postgres
+    #   - DATABASE_PASSWORD=postgres
+    #   - DATABASE_NAME=oauth
+    #   - REDIS_HOST=redis-7
+    #   - REDIS_PORT=6379
+    #   - RABBITMQ_HOST=rabbitmq-4
+    #   - RABBITMQ_PORT=5672
+    #   - RABBITMQ_USER=guest
+    #   - RABBITMQ_PASSWORD=guest
+    networks:
+      - postgres-16_postgres_network
+      - rabbitmq-4_rabbitmq_network
+      - redis_redis_network
+    volumes:
+      - .:/app
+    command: air run cmd/web/main.go
+
+networks:
+  postgres-16_postgres_network:
+    external: true
+  rabbitmq-4_rabbitmq_network:
+    external: true
+  redis_redis_network:
+    external: true

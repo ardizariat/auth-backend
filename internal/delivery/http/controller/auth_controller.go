@@ -105,7 +105,7 @@ func (m *AuthController) VerifyRefreshToken(ctx *fiber.Ctx) error {
 	return ctx.
 		JSON(model.WebResponse[string]{
 			Data:    response,
-			Message: "refresh token successfully",
+			Message: "refresh token successfullys",
 		})
 }
 

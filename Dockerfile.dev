@@ -1,35 +1,34 @@
-# Build Stage
-FROM golang:1.23 AS builder
+# Use the official Go image as a base
+FROM golang:1.23
+# FROM golang:alpine3.20
 
+# Set the working directory
 WORKDIR /app
 
-# Copy go.mod and go.sum files and download dependencies
-COPY go.* .
+# Clone the air repository manually
+RUN git clone https://github.com/air-verse/air.git /tmp/air && \
+    cd /tmp/air && \
+    go build -o /go/bin/air
+
+# Copy go.mod and go.sum to ensure dependencies are cached
+COPY go.mod go.sum ./
+
+# Download dependencies only (caches dependencies if they haven't changed)
 RUN go mod download
 
-# Copy the rest of the application files
+# Ensure dependencies are tidy
+RUN go mod tidy
+
+# Copy everything into the container
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o main cmd/web/main.go
+# Remove any existing config.yaml file
+RUN rm -f config.yaml
 
-# Final Stage
-FROM alpine:latest
-
-# Label
-LABEL DEVELOPER="ardi"
-
-# Install CA certificates for HTTPS requests
-RUN apk update && apk upgrade && apk add --no-cache git ca-certificates
-
-# Set the working directory for the final image
-WORKDIR /app
-
-# Copy the binary and the configuration file from the builder stage
-COPY --from=builder /app/main ./
-# COPY --from=builder /app/config-docker.yaml ./config.yaml
+# Copy config-docker.yaml to config.yaml
+COPY config-docker.yaml config.yaml
 
 EXPOSE 8181
 
-# Run migrations and then start the application
-CMD ["./main"]
+# Set the default command to run the application
+CMD ["air"]

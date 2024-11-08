@@ -17,6 +17,7 @@
 config.yaml
 config-*.yaml
 config-docker.yaml
+config-copy.yaml
 
 # Test binary, built with `go test -c`
 *.test

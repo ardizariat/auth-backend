@@ -18,3 +18,26 @@ type PageMetadata struct {
 	TotalItem int64 `json:"total_item"`
 	TotalPage int64 `json:"total_page"`
 }
+
+type Meta struct {
+	Success bool   `json:"success"`
+	Status  uint16 `json:"status"`
+	Message string `json:"message,omitempty"`
+}
+
+type Result[T any] struct {
+	Data       []T         `json:"data,omitempty"`
+	Pagination *Pagination `json:"pagination,omitempty"`
+}
+
+type Pagination struct {
+	Page      int `json:"page"`
+	Limit     int `json:"limit"`
+	TotalRows int `json:"total_rows"`
+	TotalPage int `json:"total_page"`
+}
+
+type WebResponseSuccess[T any] struct {
+	Meta   *Meta      `json:"meta,omitempty"`
+	Result *Result[T] `json:"result,omitempty"`
+}
