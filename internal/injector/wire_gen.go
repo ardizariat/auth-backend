@@ -16,38 +16,65 @@ import (
 	"arch/internal/usecase"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/wire"
+	"github.com/redis/go-redis/v9"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 // Injectors from injector.go:
 
-func InitializeServer() *fiber.App {
+func InitializeServer() *BootstrapApp {
 	viper := config.NewViper()
 	logger := config.NewLogrus(viper)
-	db := config.NewDatabase(viper, logger)
+	authDatabase := config.ProvideAuthDatabase(viper, logger)
+	ithubDatabase := config.ProvideIthubDatabase(viper, logger)
 	client := config.NewRedis(viper, logger)
 	jwtWrapper := config.NewJwtWrapper(viper, logger)
 	rabbitMQProducer := producer.NewRabbitMQProducer(viper, logger)
 	s3Client := config.NewAwsS3(viper, logger)
 	userRepository := repository.NewUserRepository(logger)
-	authUseCase := usecase.NewAuthUseCase(viper, logger, db, client, jwtWrapper, rabbitMQProducer, s3Client, userRepository)
+	authUseCase := usecase.NewAuthUseCase(authDatabase, ithubDatabase, viper, logger, client, jwtWrapper, rabbitMQProducer, s3Client, userRepository)
 	authJwtMiddleware := middleware.NewAuthJwtMiddleware(authUseCase)
 	validate := config.NewValidator()
 	authController := controller.NewAuthController(validate, logger, authUseCase)
-	routeApp := route.NewRouteApp(authJwtMiddleware, authController)
+	clientRepository := repository.NewClientRepository(logger)
+	clientUseCase := usecase.NewClientUseCase(authDatabase, ithubDatabase, viper, logger, client, jwtWrapper, clientRepository, userRepository)
+	clientController := controller.NewClientController(validate, logger, clientUseCase)
+	routeApp := route.NewRouteApp(authJwtMiddleware, authController, clientController)
 	app := config.NewFiber(routeApp, viper)
-	return app
+	bootstrapApp := &BootstrapApp{
+		App:    app,
+		Redis:  client,
+		Config: viper,
+		Log:    logger,
+	}
+	return bootstrapApp
 }
 
 // injector.go:
 
-var configSet = wire.NewSet(config.NewViper, config.NewLogrus, config.NewDatabase, config.NewValidator, config.NewRedis, config.NewJwtWrapper, config.NewAwsS3)
+type BootstrapApp struct {
+	App    *fiber.App
+	Redis  *redis.Client
+	Config *viper.Viper
+	Log    *logrus.Logger
+}
 
-var repositorySet = wire.NewSet(repository.NewUserRepository)
+// Create separate sets for each database connection provider
+var AuthDatabaseSet = wire.NewSet(config.ProvideAuthDatabase)
+
+var IthubDatabaseSet = wire.NewSet(config.ProvideIthubDatabase)
+
+var configSet = wire.NewSet(config.NewViper, config.NewLogrus, config.NewValidator, config.NewRedis, config.NewJwtWrapper, config.NewAwsS3, AuthDatabaseSet,
+	IthubDatabaseSet,
+)
+
+var repositorySet = wire.NewSet(repository.NewUserRepository, repository.NewClientRepository)
 
 var rabbitMQProducerSet = wire.NewSet(producer.NewRabbitMQProducer)
 
-var useCaseSet = wire.NewSet(usecase.NewAuthUseCase)
+var useCaseSet = wire.NewSet(usecase.NewAuthUseCase, usecase.NewUserUseCase, usecase.NewClientUseCase)
 
-var controllerSet = wire.NewSet(controller.NewAuthController)
+var controllerSet = wire.NewSet(controller.NewAuthController, controller.NewUserController, controller.NewClientController)
 
 var middlewareSet = wire.NewSet(middleware.NewAuthJwtMiddleware)

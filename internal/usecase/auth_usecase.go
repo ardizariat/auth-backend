@@ -22,6 +22,7 @@ import (
 
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/pquerna/otp/totp"
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -31,16 +32,18 @@ import (
 )
 
 var (
-	MODULE                    = "users"
+	MODULE             string = "users"
 	CURRENT_YEAR       int    = time.Now().Year()
 	CURRENT_MONTH      int    = int(time.Now().Month())
 	PREFIX_FILE_UPLOAD string = fmt.Sprintf("%s/%d/%d", MODULE, CURRENT_YEAR, CURRENT_MONTH)
+	maxLoginAttempts   int    = 3
 )
 
 type AuthUseCase struct {
+	AuthDatabase   model.AuthDatabase
+	IthubDatabase  model.IthubDatabase
 	Config         *viper.Viper
-	Logger         *logrus.Logger
-	Database       *gorm.DB
+	Log            *logrus.Logger
 	Redis          *redis.Client
 	Jwt            *appjwt.JwtWrapper
 	ProducerRMQ    *producer.RabbitMQProducer
@@ -49,9 +52,10 @@ type AuthUseCase struct {
 }
 
 func NewAuthUseCase(
+	authDatabase model.AuthDatabase,
+	ithubDatabase model.IthubDatabase,
 	config *viper.Viper,
-	logger *logrus.Logger,
-	database *gorm.DB,
+	log *logrus.Logger,
 	redis *redis.Client,
 	jwt *appjwt.JwtWrapper,
 	producerRMQ *producer.RabbitMQProducer,
@@ -59,9 +63,10 @@ func NewAuthUseCase(
 	userRepository *repository.UserRepository,
 ) *AuthUseCase {
 	return &AuthUseCase{
+		AuthDatabase:   authDatabase,
+		IthubDatabase:  ithubDatabase,
 		Config:         config,
-		Logger:         logger,
-		Database:       database,
+		Log:            log,
 		Redis:          redis,
 		Jwt:            jwt,
 		ProducerRMQ:    producerRMQ,
@@ -71,7 +76,7 @@ func NewAuthUseCase(
 }
 
 func (u *AuthUseCase) Register(ctx context.Context, request *model.RegisterUserRequest) (*model.UserRegisterResponse, error) {
-	tx := u.Database.WithContext(ctx).Begin()
+	tx := (*u.IthubDatabase).WithContext(ctx).Begin()
 	defer tx.Rollback()
 
 	// check email if we already have
@@ -103,7 +108,7 @@ func (u *AuthUseCase) Register(ctx context.Context, request *model.RegisterUserR
 	}
 	// save user to database
 	if err := u.UserRepository.Create(tx, user); err != nil {
-		u.Logger.Warnf("Failed create user to database : %+v", err)
+		u.Log.Warnf("Failed create user to database : %+v", err)
 		return nil, apperror.NewAppError(http.StatusInternalServerError, err.Error())
 	}
 
@@ -116,28 +121,35 @@ func (u *AuthUseCase) Register(ctx context.Context, request *model.RegisterUserR
 	}
 
 	if err := u.UserRepository.CreateLoginUser(tx, &loginUser); err != nil {
-		u.Logger.Warnf("Failed create login user to database : %+v", err)
+		u.Log.Warnf("Failed create login user to database : %+v", err)
 		return nil, apperror.NewAppError(http.StatusInternalServerError, err.Error())
 	}
 
 	// commit transaction
 	if err := tx.Commit().Error; err != nil {
-		u.Logger.Warnf("Failed commit transaction : %+v", err)
+		u.Log.Warnf("Failed commit transaction : %+v", err)
 		return nil, apperror.NewAppError(http.StatusInternalServerError, err.Error())
 	}
 
-	accessToken, err := u.Jwt.GenerateAccessToken(loginUser.ID)
+	payload := model.UserProfileResponse{
+		ID:       loginUser.ID,
+		UserID:   user.ID,
+		Name:     user.Name,
+		Username: user.Username,
+		Email:    user.Email,
+	}
+	accessToken, err := u.Jwt.GenerateAccessToken(payload)
 	if err != nil {
 		return nil, apperror.NewAppError(http.StatusUnauthorized)
 	}
 
-	refreshToken, err := u.Jwt.GenerateRefreshToken(user.CredentialID)
+	refreshToken, err := u.Jwt.GenerateRefreshToken(payload)
 	if err != nil {
 		return nil, apperror.NewAppError(http.StatusUnauthorized)
 	}
 
 	loginUser.RefreshToken = &refreshToken
-	if err = u.UserRepository.UpdateLoginUser(u.Database, &loginUser); err != nil {
+	if err = u.UserRepository.UpdateLoginUser(tx, &loginUser); err != nil {
 		return nil, apperror.NewAppError(http.StatusUnauthorized, err.Error())
 	}
 
@@ -153,22 +165,19 @@ func (u *AuthUseCase) Register(ctx context.Context, request *model.RegisterUserR
 			RefreshToken: refreshToken,
 		},
 	}, nil
+
 }
 
 func (u *AuthUseCase) Login(ctx context.Context, request *model.LoginUserRequest) (*model.UserLoginResponse, error) {
-	tx := u.Database.WithContext(ctx).Begin()
-	defer tx.Rollback()
-
-	const (
-		maxLoginAttempts = 3
-		maxLoginUser     = 5
-	)
+	ithub := (*u.IthubDatabase).WithContext(ctx)
+	auth := (*u.AuthDatabase).WithContext(ctx).Begin()
+	defer auth.Rollback()
 
 	user := new(entity.User)
 	// check user by username or email
-	if err := u.UserRepository.FindUserByUsernameOrEmail(tx, user, request.User); err != nil {
+	if err := u.UserRepository.FindUserByUsernameOrEmail(ithub, user, request.User); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			u.Logger.Warnf("Failed find user by user or email : %+v", err)
+			u.Log.Warnf("Failed find user by user or email : %+v", err)
 			return nil, apperror.NewAppError(http.StatusUnauthorized)
 		}
 		return nil, apperror.NewAppError(http.StatusInternalServerError, err.Error())
@@ -205,7 +214,7 @@ func (u *AuthUseCase) Login(ctx context.Context, request *model.LoginUserRequest
 
 	// check password user
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(request.Password)); err != nil {
-		u.Logger.Warnf("Failed to compare user password with bcrype hash : %+v", err)
+		u.Log.Warnf("Failed to compare user password with bcrype hash : %+v", err)
 		// increment login attempt and save it to Redis
 		loginAttempt++
 		err := u.Redis.Set(ctx, key, loginAttempt, time.Duration(expCache*float64(time.Minute))).Err()
@@ -215,19 +224,19 @@ func (u *AuthUseCase) Login(ctx context.Context, request *model.LoginUserRequest
 		return nil, apperror.NewAppError(http.StatusUnauthorized)
 	}
 
-	// chech login user device
-	totalLoginUser, err := u.UserRepository.CountLoginUser(tx, user.ID)
-	if err != nil {
-		return nil, apperror.NewAppError(http.StatusUnauthorized)
-	}
-	if totalLoginUser > maxLoginUser {
-		return nil, apperror.NewAppError(http.StatusUnauthorized, "maksimal login 5 perangkat, anda sudah login 5 perangkat silahkan logout disalah satu perangkat atau hubungi IT")
-	}
+	// check login user device
+	// totalLoginUser, err := u.UserRepository.CountLoginUser(tx, user.ID)
+	// if err != nil {
+	// 	return nil, apperror.NewAppError(http.StatusUnauthorized)
+	// }
+	// if totalLoginUser > maxLoginUser {
+	// 	return nil, apperror.NewAppError(http.StatusUnauthorized, "maksimal login 5 perangkat, anda sudah login 5 perangkat silahkan logout disalah satu perangkat atau hubungi IT")
+	// }
 
 	now := time.Now()
 	user.LastLogin = &now
-	if err := u.UserRepository.UpdateUser(tx, user); err != nil {
-		u.Logger.Warnf("Failed update user to database : %+v", err)
+	if err := u.UserRepository.UpdateUser(ithub, user); err != nil {
+		u.Log.Warnf("Failed update user to database : %+v", err)
 		return nil, apperror.NewAppError(http.StatusInternalServerError, err.Error())
 	}
 
@@ -239,29 +248,36 @@ func (u *AuthUseCase) Login(ctx context.Context, request *model.LoginUserRequest
 		Model:         request.Model,
 	}
 
-	if err := u.UserRepository.CreateLoginUser(tx, &loginUser); err != nil {
-		u.Logger.Warnf("Failed create login user to database : %+v", err)
+	if err := u.UserRepository.CreateLoginUser(auth, &loginUser); err != nil {
+		u.Log.Warnf("Failed create login user to database : %+v", err)
 		return nil, apperror.NewAppError(http.StatusInternalServerError, err.Error())
 	}
 
 	// commit transaction
-	if err := tx.Commit().Error; err != nil {
-		u.Logger.Warnf("Failed commit transaction : %+v", err)
+	if err := auth.Commit().Error; err != nil {
+		u.Log.Warnf("Failed commit transaction : %+v", err)
 		return nil, apperror.NewAppError(http.StatusInternalServerError, err.Error())
 	}
 
-	accessToken, err := u.Jwt.GenerateAccessToken(loginUser.ID)
+	payload := model.UserProfileResponse{
+		ID:       loginUser.ID,
+		UserID:   user.ID,
+		Name:     user.Name,
+		Username: user.Username,
+		Email:    user.Email,
+	}
+	accessToken, err := u.Jwt.GenerateAccessToken(payload)
 	if err != nil {
 		return nil, apperror.NewAppError(http.StatusUnauthorized)
 	}
 
-	refreshToken, err := u.Jwt.GenerateRefreshToken(loginUser.ID)
+	refreshToken, err := u.Jwt.GenerateRefreshToken(payload)
 	if err != nil {
 		return nil, apperror.NewAppError(http.StatusUnauthorized)
 	}
 
 	loginUser.RefreshToken = &refreshToken
-	if err = u.UserRepository.UpdateLoginUser(u.Database, &loginUser); err != nil {
+	if err = u.UserRepository.UpdateLoginUser(u.AuthDatabase, &loginUser); err != nil {
 		return nil, apperror.NewAppError(http.StatusUnauthorized, err.Error())
 	}
 
@@ -280,20 +296,10 @@ func (u *AuthUseCase) Login(ctx context.Context, request *model.LoginUserRequest
 }
 
 func (u *AuthUseCase) VerifyAccessToken(ctx context.Context, tokenEncrypt string) (*model.UserProfileResponse, error) {
-	// check blacklist token
-	blacklistKey := fmt.Sprintf("blacklist_access_token:%s", tokenEncrypt)
-	loginTokenExists, err := u.Redis.Get(ctx, blacklistKey).Result()
-	if err != nil && err != redis.Nil {
-		// Redis error, return unauthorized
-		return nil, apperror.NewAppError(http.StatusUnauthorized, err.Error())
-	}
-	// If `loginTokenExists` is not empty, it means the token is blacklisted
-	if loginTokenExists != "" {
-		return nil, apperror.NewAppError(http.StatusUnauthorized, "token is blacklisted and cannot be used")
-	}
-
+	ithub := (*u.IthubDatabase).WithContext(ctx)
+	auth := (*u.AuthDatabase).WithContext(ctx)
 	key := fmt.Sprintf("verify_access_token:%s", tokenEncrypt)
-	var expCache float64 = 3
+	var expCache float64 = 2
 	verifyAccessToken, err := u.Redis.Get(ctx, key).Result()
 	if err != nil && err != redis.Nil {
 		// Handle Redis error (other than key not found)
@@ -308,6 +314,19 @@ func (u *AuthUseCase) VerifyAccessToken(ctx context.Context, tokenEncrypt string
 		if err != nil {
 			return nil, apperror.NewAppError(http.StatusUnauthorized, err.Error())
 		}
+
+		// check blacklist token
+		blacklistKey := fmt.Sprintf("blacklist_login_user:%s", userProfileCache.ID)
+		loginTokenExists, err := u.Redis.Get(ctx, blacklistKey).Result()
+		if err != nil && err != redis.Nil {
+			// Redis error, return unauthorized
+			return nil, apperror.NewAppError(http.StatusUnauthorized, err.Error())
+		}
+		// If `loginTokenExists` is not empty, it means the token is blacklisted
+		if loginTokenExists != "" {
+			return nil, apperror.NewAppError(http.StatusUnauthorized, "token is blacklisted and cannot be used")
+		}
+
 		// userProfileCacheJson, err := json.Marshal(userProfileCache)
 		// if err != nil {
 		// 	return nil, apperror.NewAppError(http.StatusUnauthorized, err.Error())
@@ -315,25 +334,46 @@ func (u *AuthUseCase) VerifyAccessToken(ctx context.Context, tokenEncrypt string
 		// u.ProducerRMQ.PublishMessage(ctx, "notification", "fcm", "application/json", []byte(userProfileCacheJson))
 		return userProfileCache, nil
 	}
+
 	claims, err := u.Jwt.ValidateAccessToken(tokenEncrypt)
 	if err != nil {
 		return nil, apperror.NewAppError(http.StatusUnauthorized, err.Error())
 	}
 
-	loginUser := new(model.LoginUserQueryResponse)
-	if err := u.UserRepository.FindUserByLoginUserID(u.Database, loginUser, claims.ID); err != nil {
+	// check blacklist token
+	blacklistKey := fmt.Sprintf("blacklist_login_user:%s", claims.ID)
+	loginTokenExists, err := u.Redis.Get(ctx, blacklistKey).Result()
+	if err != nil && err != redis.Nil {
+		// Redis error, return unauthorized
+		return nil, apperror.NewAppError(http.StatusUnauthorized, err.Error())
+	}
+	// If `loginTokenExists` is not empty, it means the token is blacklisted
+	if loginTokenExists != "" {
+		return nil, apperror.NewAppError(http.StatusUnauthorized, "token is blacklisted and cannot be used")
+	}
+
+	ok, err := u.UserRepository.FindUserByLoginUserID(auth, claims.ID)
+	if !ok || err != nil {
+		return nil, apperror.NewAppError(http.StatusUnauthorized)
+	}
+
+	u.Log.Info(ok, err)
+
+	user := new(entity.User)
+	// check user by username or email
+	if err := u.UserRepository.FindById(ithub, user, claims.UserID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			u.Log.Warnf("Failed find user by id : %+v", err)
 			return nil, apperror.NewAppError(http.StatusUnauthorized)
 		}
 		return nil, apperror.NewAppError(http.StatusInternalServerError, err.Error())
 	}
 
 	response := &model.UserProfileResponse{
-		ID:     loginUser.ID,
-		UserID: loginUser.UserID,
-		Name:   loginUser.Name,
-		Email:  loginUser.Email,
-		Token:  tokenEncrypt,
+		ID:     claims.ID,
+		UserID: user.ID,
+		Name:   user.Name,
+		Email:  user.Email,
 	}
 
 	// Key exists set data to redis
@@ -350,20 +390,36 @@ func (u *AuthUseCase) VerifyAccessToken(ctx context.Context, tokenEncrypt string
 }
 
 func (u *AuthUseCase) VerifyRefreshToken(ctx context.Context, tokenEncrypt string) (string, error) {
+	ithub := (*u.IthubDatabase).WithContext(ctx)
+	auth := (*u.AuthDatabase).WithContext(ctx)
 	claims, err := u.Jwt.ValidateRefreshToken(tokenEncrypt)
 	if err != nil {
 		return "", apperror.NewAppError(http.StatusUnauthorized, err.Error())
 	}
 
-	user := new(model.LoginUserQueryResponse)
-	if err := u.UserRepository.FindUserByLoginUserID(u.Database, user, claims.ID); err != nil {
+	ok, err := u.UserRepository.FindUserByLoginUserID(auth, claims.ID)
+	if !ok || err != nil {
+		return "", apperror.NewAppError(http.StatusUnauthorized)
+	}
+
+	user := new(entity.User)
+	// check user by username or email
+	if err := u.UserRepository.FindById(ithub, user, claims.UserID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			u.Log.Warnf("Failed find user by od : %+v", err)
 			return "", apperror.NewAppError(http.StatusUnauthorized)
 		}
 		return "", apperror.NewAppError(http.StatusInternalServerError, err.Error())
 	}
 
-	newToken, err := u.Jwt.GenerateAccessToken(claims.ID)
+	payload := model.UserProfileResponse{
+		ID:       claims.ID,
+		UserID:   user.ID,
+		Name:     user.Name,
+		Username: user.Username,
+		Email:    user.Email,
+	}
+	newToken, err := u.Jwt.GenerateAccessToken(payload)
 	if err != nil {
 		return "", apperror.NewAppError(http.StatusUnauthorized)
 	}
@@ -372,13 +428,13 @@ func (u *AuthUseCase) VerifyRefreshToken(ctx context.Context, tokenEncrypt strin
 }
 
 func (u *AuthUseCase) UpdatePassword(ctx context.Context, request *model.UpdatePasswordLoginRequest) error {
-	tx := u.Database.WithContext(ctx).Begin()
+	tx := (*u.IthubDatabase).WithContext(ctx).Begin()
 	defer tx.Rollback()
 
 	user := new(entity.User)
 	if err := u.UserRepository.FindById(tx, user, request.ID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			u.Logger.Warnf("Failed find user by user or email : %+v", err)
+			u.Log.Warnf("Failed find user by user or email : %+v", err)
 			return apperror.NewAppError(http.StatusBadRequest)
 		}
 		return apperror.NewAppError(http.StatusInternalServerError, err.Error())
@@ -386,24 +442,24 @@ func (u *AuthUseCase) UpdatePassword(ctx context.Context, request *model.UpdateP
 
 	// check password user
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(request.OldPassword)); err != nil {
-		u.Logger.Warnf("Failed to compare user password with bcrype hash : %+v", err)
+		u.Log.Warnf("Failed to compare user password with bcrype hash : %+v", err)
 		return apperror.NewAppError(http.StatusBadRequest, "password lama yang anda masukkan salah")
 	}
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(request.Password), bcrypt.DefaultCost)
 	if err != nil {
-		u.Logger.Warnf("Failed update suer : %+v", err)
+		u.Log.Warnf("Failed update suer : %+v", err)
 		return apperror.NewAppError(http.StatusInternalServerError, err.Error())
 	}
 
 	user.Password = string(passwordHash)
 	if err := u.UserRepository.UpdateUser(tx, user); err != nil {
-		u.Logger.Warnf("Failed update user : %+v", err)
+		u.Log.Warnf("Failed update user : %+v", err)
 		return apperror.NewAppError(http.StatusInternalServerError, err.Error())
 	}
 
 	if err := tx.Commit().Error; err != nil {
-		u.Logger.Warnf("Failed commit transaction : %+v", err)
+		u.Log.Warnf("Failed commit transaction : %+v", err)
 		return apperror.NewAppError(http.StatusInternalServerError, err.Error())
 	}
 
@@ -411,12 +467,12 @@ func (u *AuthUseCase) UpdatePassword(ctx context.Context, request *model.UpdateP
 }
 
 func (u *AuthUseCase) Logout(ctx context.Context, request *model.UserProfileResponse) error {
-	tx := u.Database.WithContext(ctx).Begin()
+	tx := (*u.IthubDatabase).WithContext(ctx).Begin()
 	defer tx.Rollback()
 
 	// find login user in database
 	loginUser := new(entity.LoginUser)
-	if err := u.UserRepository.FindByIdLoginUser(u.Database, loginUser, request.ID); err != nil {
+	if err := u.UserRepository.FindByIdLoginUser(tx, loginUser, request.ID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return apperror.NewAppError(http.StatusUnauthorized)
 		}
@@ -425,12 +481,12 @@ func (u *AuthUseCase) Logout(ctx context.Context, request *model.UserProfileResp
 
 	// delete row if exists
 	if err := u.UserRepository.DeleteLoginUser(tx, loginUser, request.ID); err != nil {
-		u.Logger.Warnf("Failed delete : %+v", err)
+		u.Log.Warnf("Failed delete : %+v", err)
 		return apperror.NewAppError(http.StatusInternalServerError, err.Error())
 	}
 
 	// delete cache in redis
-	key := fmt.Sprintf("verify_access_token:%s", request.Token)
+	key := fmt.Sprintf("verify_access_token:%s", request.ID)
 	_, err := u.Redis.Del(ctx, key).Result()
 	if err != nil {
 		// Handle Redis error (other than key not found)
@@ -439,14 +495,14 @@ func (u *AuthUseCase) Logout(ctx context.Context, request *model.UserProfileResp
 
 	// set data blacklist token in redis
 	var expCache float64 = 1 // 1 hours
-	blacklistKey := fmt.Sprintf("blacklist_access_token:%s", request.Token)
-	err = u.Redis.Set(ctx, blacklistKey, request.Token, time.Duration(expCache*float64(time.Hour))).Err()
+	blacklistKey := fmt.Sprintf("blacklist_login_user:%s", request.ID)
+	err = u.Redis.Set(ctx, blacklistKey, request.ID, time.Duration(expCache*float64(time.Hour))).Err()
 	if err != nil {
 		return apperror.NewAppError(http.StatusUnauthorized, err.Error())
 	}
 
 	if err := tx.Commit().Error; err != nil {
-		u.Logger.Warnf("Failed commit transaction : %+v", err)
+		u.Log.Warnf("Failed commit transaction : %+v", err)
 		return apperror.NewAppError(http.StatusInternalServerError, err.Error())
 	}
 
@@ -454,7 +510,8 @@ func (u *AuthUseCase) Logout(ctx context.Context, request *model.UserProfileResp
 }
 
 func (u *AuthUseCase) FindLoginUserByUserId(ctx context.Context, request string) ([]model.LoginUserResponse, error) {
-	loginUser, err := u.UserRepository.FindLoginUserByUserId(u.Database, request)
+	tx := (*u.IthubDatabase).WithContext(ctx)
+	loginUser, err := u.UserRepository.FindLoginUserByUserId(tx, request)
 	if err != nil {
 		return nil, apperror.NewAppError(http.StatusInternalServerError, err.Error())
 	}
@@ -466,16 +523,16 @@ func (u *AuthUseCase) FindLoginUserByUserId(ctx context.Context, request string)
 }
 
 func (u *AuthUseCase) ForceLogout(ctx context.Context, request *model.ForceLogoutRequest) error {
-	tx := u.Database.WithContext(ctx).Begin()
+	tx := (*u.IthubDatabase).WithContext(ctx).Begin()
 	defer tx.Rollback()
 
 	if err := u.UserRepository.DeleteMultipleLoginUser(tx, request.IDs); err != nil {
-		u.Logger.Warnf("Failed delete multiple login user : %+v", err)
+		u.Log.Warnf("Failed delete multiple login user : %+v", err)
 		return apperror.NewAppError(http.StatusInternalServerError, err.Error())
 	}
 
 	if err := tx.Commit().Error; err != nil {
-		u.Logger.Warnf("Failed commit transaction : %+v", err)
+		u.Log.Warnf("Failed commit transaction : %+v", err)
 		return apperror.NewAppError(http.StatusInternalServerError, err.Error())
 	}
 	return nil
@@ -549,4 +606,171 @@ func (u *AuthUseCase) putFiles(ctx context.Context, files []*multipart.FileHeade
 		return errors.New(errorMessage)
 	}
 	return nil
+}
+
+func (u *AuthUseCase) GetUserByPersonalEmail(ctx context.Context, request *model.LoginUserByPersonalEmailRequest) (*model.UserLoginResponse, error) {
+	tx := (*u.IthubDatabase).WithContext(ctx).Begin()
+	defer tx.Rollback()
+
+	user := new(model.LoginUserByPersonalEmail)
+	// check user by personal email
+	if err := u.UserRepository.FindUserByPersonalEmail(tx, user, request.PersonalEmail); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperror.NewAppError(http.StatusUnauthorized)
+		}
+		return nil, apperror.NewAppError(http.StatusInternalServerError, err.Error())
+	}
+
+	// if user exists, check login attempt
+	key := fmt.Sprintf("login_attempt:%s", user.ID)
+	var expCache float64 = 5 // 5 minutes
+
+	loginAttemptString, err := u.Redis.Get(ctx, key).Result()
+	if err != nil && err != redis.Nil {
+		// Handle Redis error (other than key not found)
+		return nil, apperror.NewAppError(http.StatusInternalServerError, err.Error())
+	}
+	loginAttempt := 0
+	if err == nil {
+		// Key exists, convert the retrieved string to an integer
+		if attempt, convErr := strconv.Atoi(loginAttemptString); convErr != nil {
+			// Handle conversion error
+			return nil, apperror.NewAppError(http.StatusInternalServerError, "invalid login attempt value")
+		} else {
+			loginAttempt = attempt
+		}
+	}
+
+	if loginAttempt > maxLoginAttempts {
+		return nil, apperror.NewAppError(http.StatusUnauthorized, fmt.Sprintf("anda sudah mencoba 3 kali login dan gagal, silahkan coba lagi dalam %d menit", int(expCache)))
+	}
+
+	// now := time.Now()
+	// user.LastLogin = &now
+	// if err := u.UserRepository.UpdateUser(tx, user); err != nil {
+	// 	u.Log.Warnf("Failed update user to database : %+v", err)
+	// 	return nil, apperror.NewAppError(http.StatusInternalServerError, err.Error())
+	// }
+
+	loginUser := entity.LoginUser{
+		UserID:        user.ID,
+		UserAgent:     request.UserAgent,
+		IpAddress:     request.IpAddress,
+		FirebaseToken: request.FirebaseToken,
+		Model:         request.Model,
+	}
+
+	if err := u.UserRepository.CreateLoginUser(tx, &loginUser); err != nil {
+		u.Log.Warnf("Failed create login user to database : %+v", err)
+		return nil, apperror.NewAppError(http.StatusInternalServerError, err.Error())
+	}
+
+	// commit transaction
+	if err := tx.Commit().Error; err != nil {
+		u.Log.Warnf("Failed commit transaction : %+v", err)
+		return nil, apperror.NewAppError(http.StatusInternalServerError, err.Error())
+	}
+
+	payload := model.UserProfileResponse{
+		ID:       loginUser.ID,
+		UserID:   user.ID,
+		Name:     user.Name,
+		Username: user.Username,
+		Email:    user.Email,
+	}
+	accessToken, err := u.Jwt.GenerateAccessToken(payload)
+	if err != nil {
+		return nil, apperror.NewAppError(http.StatusUnauthorized)
+	}
+
+	refreshToken, err := u.Jwt.GenerateRefreshToken(payload)
+	if err != nil {
+		return nil, apperror.NewAppError(http.StatusUnauthorized)
+	}
+
+	loginUser.RefreshToken = &refreshToken
+	if err = u.UserRepository.UpdateLoginUser(tx, &loginUser); err != nil {
+		return nil, apperror.NewAppError(http.StatusUnauthorized, err.Error())
+	}
+
+	return &model.UserLoginResponse{
+		User: model.UserResponse{
+			ID:       user.ID,
+			Name:     user.Name,
+			Username: user.Username,
+			Email:    user.Email,
+		},
+		Token: model.TokenResponse{
+			AccessToken:  accessToken,
+			RefreshToken: refreshToken,
+		},
+	}, nil
+}
+
+func (u *AuthUseCase) GetAllFirebaseTokenByUserIds(ctx context.Context, userIds []string) ([]model.DataFirebaseToken, error) {
+	if len(userIds) < 1 {
+		return nil, errors.New("user ids must not be empty")
+	}
+	tx := (*u.IthubDatabase).WithContext(ctx)
+	result, err := u.UserRepository.GetAllFirebaseTokenByUserIds(tx, userIds)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (u *AuthUseCase) GenerateOtp(ctx context.Context, request *model.UserProfileResponse) (string, error) {
+	tx := (*u.IthubDatabase).WithContext(ctx).Begin()
+	defer tx.Rollback()
+
+	u.Log.Infof("request : %v", request)
+	user := new(entity.User)
+	if err := u.UserRepository.FindById(tx, user, request.UserID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", apperror.NewAppError(http.StatusUnauthorized)
+		}
+		return "", apperror.NewAppError(http.StatusUnauthorized, err.Error())
+	}
+
+	issuer := u.Config.GetString("app.name")
+	secret, err := totp.Generate(totp.GenerateOpts{
+		Issuer:      issuer,
+		AccountName: user.Email,
+	})
+	if err != nil {
+		return "", err
+	}
+	secretCode := secret.Secret()
+
+	user.OTPSecret = &secretCode
+	if err := u.UserRepository.UpdateUser(tx, user); err != nil {
+		return "", apperror.NewAppError(http.StatusInternalServerError, err.Error())
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return "", apperror.NewAppError(http.StatusInternalServerError, err.Error())
+	}
+
+	// otpauth://totp/YourAppName:user@example.com?secret=ABCD1234&issuer=YourAppName
+	otpURL := fmt.Sprintf("otpauth://totp/%s:%s?secret=%s&issuer=%s", issuer, user.Email, secretCode, issuer)
+	return otpURL, nil
+
+}
+
+func (u *AuthUseCase) ValidateOTP(ctx context.Context, request *model.ValidateOTPRequest) (bool, error) {
+	tx := (*u.IthubDatabase).WithContext(ctx)
+	defer tx.Rollback()
+
+	user := new(entity.User)
+	// check user by username or email
+	if err := u.UserRepository.FindOtpSecretUserByID(tx, user, request.UserID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			u.Log.Warnf("Failed find user by user or email : %+v", err)
+			return false, apperror.NewAppError(http.StatusUnauthorized)
+		}
+		return false, apperror.NewAppError(http.StatusUnauthorized, err.Error())
+	}
+	ok := totp.Validate(request.OTP, *user.OTPSecret)
+
+	return ok, nil
 }

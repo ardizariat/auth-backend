@@ -11,20 +11,25 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/web/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o main cmd/web/main.go
 
 # Final Stage
 FROM alpine:latest
 
+# Label
+LABEL DEVELOPER="ardizariat"
+
 # Install CA certificates for HTTPS requests
-RUN apk update && apk add --no-cache git ca-certificates
+RUN apk update && apk upgrade && apk add --no-cache git ca-certificates && apk add vim
 
 # Set the working directory for the final image
 WORKDIR /app
 
 # Copy the binary and the configuration file from the builder stage
 COPY --from=builder /app/main ./
-COPY --from=builder /app/config.yaml ./
+COPY --from=builder /app/config-docker.yaml ./config.yaml
+
+EXPOSE 9000
 
 # Run migrations and then start the application
 CMD ["./main"]

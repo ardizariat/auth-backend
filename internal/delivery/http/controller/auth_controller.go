@@ -6,6 +6,7 @@ import (
 	"arch/internal/model"
 	"arch/internal/usecase"
 	"arch/pkg/apperror"
+	"arch/pkg/auth"
 	"net/http"
 
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
@@ -16,18 +17,18 @@ import (
 
 type AuthController struct {
 	Validator   *validator.Validate
-	Logger      *logrus.Logger
+	Log         *logrus.Logger
 	AuthUseCase *usecase.AuthUseCase
 }
 
 func NewAuthController(
 	validator *validator.Validate,
-	logger *logrus.Logger,
+	log *logrus.Logger,
 	authUseCase *usecase.AuthUseCase,
 ) *AuthController {
 	return &AuthController{
 		Validator:   validator,
-		Logger:      logger,
+		Log:         log,
 		AuthUseCase: authUseCase,
 	}
 }
@@ -36,59 +37,87 @@ func (c *AuthController) Register(ctx *fiber.Ctx) error {
 	request := new(model.RegisterUserRequest)
 
 	if err := ctx.BodyParser(request); err != nil {
-		return apperror.HandleError(ctx, c.Logger, apperror.NewAppError(http.StatusBadRequest, err.Error()))
+		return apperror.HandleError(ctx, c.Log, apperror.NewAppError(http.StatusBadRequest, err.Error()))
 	}
 
 	if err := c.Validator.Struct(request); err != nil {
-		return apperror.HandleError(ctx, c.Logger, err)
+		return apperror.HandleError(ctx, c.Log, err)
 	}
 
 	request.UserAgent = ctx.Get("User-Agent")
 	request.IpAddress = ctx.IP()
 
-	response, err := c.AuthUseCase.Register(ctx.UserContext(), request)
+	result, err := c.AuthUseCase.Register(ctx.UserContext(), request)
 	if err != nil {
-		return apperror.HandleError(ctx, c.Logger, err)
+		return apperror.HandleError(ctx, c.Log, err)
 	}
 
-	return ctx.
-		Status(http.StatusCreated).
-		JSON(model.WebResponse[*model.UserRegisterResponse]{
-			Data:    response,
-			Message: "register successfully",
-		})
+	res := helper.ResponseSuccess(helper.HttpResponseParamSuccess[*model.UserRegisterResponse]{
+		Data:       result,
+		StatusCode: http.StatusCreated,
+		Message:    "create successfully",
+	})
+	return ctx.Status(http.StatusCreated).JSON(res)
 }
 
 func (c *AuthController) Login(ctx *fiber.Ctx) error {
 	request := new(model.LoginUserRequest)
 
 	if err := ctx.BodyParser(request); err != nil {
-		return apperror.HandleError(ctx, c.Logger, apperror.NewAppError(http.StatusBadRequest, err.Error()))
+		return apperror.HandleError(ctx, c.Log, apperror.NewAppError(http.StatusBadRequest, err.Error()))
 	}
 
 	if err := c.Validator.Struct(request); err != nil {
-		return apperror.HandleError(ctx, c.Logger, err)
+		return apperror.HandleError(ctx, c.Log, err)
 	}
 
 	request.UserAgent = ctx.Get("User-Agent")
 	request.IpAddress = ctx.IP()
 
-	response, err := c.AuthUseCase.Login(ctx.UserContext(), request)
+	result, err := c.AuthUseCase.Login(ctx.UserContext(), request)
 	if err != nil {
-		return apperror.HandleError(ctx, c.Logger, err)
+		return apperror.HandleError(ctx, c.Log, err)
 	}
 
-	return ctx.JSON(model.WebResponse[*model.UserLoginResponse]{Data: response})
+	res := helper.ResponseSuccess(helper.HttpResponseParamSuccess[*model.UserLoginResponse]{
+		Data: result,
+	})
+	return ctx.JSON(res)
+}
+
+func (c *AuthController) LoginByPersonalEmailOAuth(ctx *fiber.Ctx) error {
+	request := new(model.LoginUserByPersonalEmailRequest)
+
+	if err := ctx.BodyParser(request); err != nil {
+		return apperror.HandleError(ctx, c.Log, apperror.NewAppError(http.StatusBadRequest, err.Error()))
+	}
+
+	if err := c.Validator.Struct(request); err != nil {
+		return apperror.HandleError(ctx, c.Log, err)
+	}
+
+	request.UserAgent = ctx.Get("User-Agent")
+	request.IpAddress = ctx.IP()
+
+	result, err := c.AuthUseCase.GetUserByPersonalEmail(ctx.UserContext(), request)
+	if err != nil {
+		return apperror.HandleError(ctx, c.Log, err)
+	}
+	res := helper.ResponseSuccess(helper.HttpResponseParamSuccess[*model.UserLoginResponse]{
+		Data: result,
+	})
+	return ctx.JSON(res)
 }
 
 func (c *AuthController) Profile(ctx *fiber.Ctx) error {
-	authJwt, ok := ctx.Locals(constants.AUTH_JWT).(*model.UserProfileResponse)
-	if !ok || authJwt == nil {
-		return ctx.Status(http.StatusUnauthorized).JSON(model.WebResponse[*model.UserProfileResponse]{
-			Message: http.StatusText(http.StatusUnauthorized),
-		})
+	auth, ok := auth.GetUser(ctx)
+	if !ok {
+		return apperror.HandleError(ctx, c.Log, apperror.NewAppError(http.StatusUnauthorized))
 	}
-	return ctx.JSON(model.WebResponse[*model.UserProfileResponse]{Data: authJwt})
+	res := helper.ResponseSuccess(helper.HttpResponseParamSuccess[*model.UserProfileResponse]{
+		Data: auth,
+	})
+	return ctx.JSON(res)
 }
 
 func (m *AuthController) VerifyRefreshToken(ctx *fiber.Ctx) error {
@@ -98,117 +127,194 @@ func (m *AuthController) VerifyRefreshToken(ctx *fiber.Ctx) error {
 			Message: http.StatusText(http.StatusUnauthorized),
 		})
 	}
-	response, err := m.AuthUseCase.VerifyRefreshToken(ctx.UserContext(), refreshToken)
+	result, err := m.AuthUseCase.VerifyRefreshToken(ctx.UserContext(), refreshToken)
 	if err != nil {
 		return ctx.Status(http.StatusUnauthorized).JSON(model.WebResponse[any]{Message: http.StatusText(http.StatusUnauthorized)})
 	}
-	return ctx.
-		JSON(model.WebResponse[string]{
-			Data:    response,
-			Message: "refresh token successfullys",
-		})
+	res := helper.ResponseSuccess(helper.HttpResponseParamSuccess[string]{
+		Message: "refresh token successfully",
+		Data:    result,
+	})
+	return ctx.JSON(res)
 }
 
 func (c *AuthController) UpdatePassword(ctx *fiber.Ctx) error {
-	authJwt, ok := ctx.Locals(constants.AUTH_JWT).(*model.UserProfileResponse)
-	if !ok || authJwt == nil {
-		return ctx.Status(http.StatusUnauthorized).JSON(model.WebResponse[*model.UserProfileResponse]{
-			Message: http.StatusText(http.StatusUnauthorized),
-		})
+	authJwt, ok := auth.GetUser(ctx)
+	if !ok {
+		return apperror.HandleError(ctx, c.Log, apperror.NewAppError(http.StatusUnauthorized))
 	}
 	request := new(model.UpdatePasswordLoginRequest)
 	request.ID = authJwt.UserID
 	if err := ctx.BodyParser(request); err != nil {
-		return apperror.HandleError(ctx, c.Logger, apperror.NewAppError(http.StatusBadRequest, err.Error()))
+		return apperror.HandleError(ctx, c.Log, apperror.NewAppError(http.StatusBadRequest, err.Error()))
 	}
 
 	if err := c.Validator.Struct(request); err != nil {
-		return apperror.HandleError(ctx, c.Logger, err)
+		return apperror.HandleError(ctx, c.Log, err)
 	}
 
 	if err := c.AuthUseCase.UpdatePassword(ctx.UserContext(), request); err != nil {
-		return apperror.HandleError(ctx, c.Logger, err)
+		return apperror.HandleError(ctx, c.Log, err)
 	}
 
-	return ctx.JSON(model.WebResponse[*model.UserProfileResponse]{Message: "update password successfully"})
+	res := helper.ResponseSuccess(helper.HttpResponseParamSuccess[any]{
+		Message: "update password successfully",
+	})
+	return ctx.JSON(res)
 }
 
 func (c *AuthController) Logout(ctx *fiber.Ctx) error {
-	authJwt, ok := ctx.Locals(constants.AUTH_JWT).(*model.UserProfileResponse)
-	if !ok || authJwt == nil {
-		return ctx.Status(http.StatusUnauthorized).JSON(model.WebResponse[*model.UserProfileResponse]{
-			Message: http.StatusText(http.StatusUnauthorized),
-		})
+	authJwt, ok := auth.GetUser(ctx)
+	if !ok {
+		return apperror.HandleError(ctx, c.Log, apperror.NewAppError(http.StatusUnauthorized))
 	}
 
 	if err := c.AuthUseCase.Logout(ctx.UserContext(), authJwt); err != nil {
-		return apperror.HandleError(ctx, c.Logger, err)
+		return apperror.HandleError(ctx, c.Log, err)
 	}
 
 	ctx.Locals(constants.AUTH_JWT, nil)
 
-	return ctx.JSON(model.WebResponse[*model.UserProfileResponse]{Message: "logout successfully"})
+	res := helper.ResponseSuccess(helper.HttpResponseParamSuccess[any]{
+		Message: "logout successfully",
+	})
+	return ctx.JSON(res)
 }
 
 func (c *AuthController) ForceLogout(ctx *fiber.Ctx) error {
 	request := new(model.ForceLogoutRequest)
 
 	if err := ctx.BodyParser(request); err != nil {
-		return apperror.HandleError(ctx, c.Logger, apperror.NewAppError(http.StatusBadRequest, err.Error()))
+		return apperror.HandleError(ctx, c.Log, apperror.NewAppError(http.StatusBadRequest, err.Error()))
 	}
 
 	if err := c.Validator.Struct(request); err != nil {
-		return apperror.HandleError(ctx, c.Logger, err)
+		return apperror.HandleError(ctx, c.Log, err)
 	}
 
 	if err := c.AuthUseCase.ForceLogout(ctx.UserContext(), request); err != nil {
-		return apperror.HandleError(ctx, c.Logger, err)
+		return apperror.HandleError(ctx, c.Log, err)
 	}
 
-	return ctx.JSON(model.WebResponse[string]{Message: "force logout successfully and wait 3 minutes for synchronization"})
+	res := helper.ResponseSuccess(helper.HttpResponseParamSuccess[any]{
+		Message: "force logout successfully",
+	})
+	return ctx.JSON(res)
 }
 
 func (c *AuthController) FindLoginUserByUserId(ctx *fiber.Ctx) error {
-	authJwt, ok := ctx.Locals(constants.AUTH_JWT).(*model.UserProfileResponse)
-	if !ok || authJwt == nil {
-		return ctx.Status(http.StatusUnauthorized).JSON(model.WebResponse[*model.UserProfileResponse]{
-			Message: http.StatusText(http.StatusUnauthorized),
-		})
+	authJwt, ok := auth.GetUser(ctx)
+	if !ok {
+		return apperror.HandleError(ctx, c.Log, apperror.NewAppError(http.StatusUnauthorized))
 	}
 
-	response, err := c.AuthUseCase.FindLoginUserByUserId(ctx.UserContext(), authJwt.UserID)
+	result, err := c.AuthUseCase.FindLoginUserByUserId(ctx.UserContext(), authJwt.UserID)
 	if err != nil {
-		return apperror.HandleError(ctx, c.Logger, err)
+		return apperror.HandleError(ctx, c.Log, err)
 	}
 
-	return ctx.JSON(model.WebResponse[[]model.LoginUserResponse]{Message: "get login user successfully", Data: response})
+	res := helper.ResponseSuccess(helper.HttpResponseParamSuccess[[]model.LoginUserResponse]{
+		Message: "get login user successfully",
+		Data:    result,
+	})
+	return ctx.JSON(res)
 }
 
 func (c *AuthController) UploadPhotoProfile(ctx *fiber.Ctx) error {
 	form, err := ctx.MultipartForm()
 	if err != nil {
-		return apperror.HandleError(ctx, c.Logger, err)
+		return apperror.HandleError(ctx, c.Log, err)
 	}
 	request := new(model.UploadPhotoProfile)
 
 	// if err := c.Validator.Struct(request); err != nil {
-	// 	return apperror.HandleError(ctx, c.Logger, err)
+	// 	return apperror.HandleError(ctx, c.Log, err)
 	// }
 
 	request.ID = helper.GetStringFromFormValue(form, "id")
 	request.Files = form.File["files"]
 
 	if err = c.AuthUseCase.UploadPhotoProfile(ctx.UserContext(), request); err != nil {
-		return apperror.HandleError(ctx, c.Logger, err)
+		return apperror.HandleError(ctx, c.Log, err)
 	}
 
-	return ctx.JSON(model.WebResponse[string]{Message: "upload user successfully"})
+	res := helper.ResponseSuccess(helper.HttpResponseParamSuccess[any]{
+		Message: "upload user successfully",
+	})
+	return ctx.JSON(res)
 }
 
 func (c *AuthController) GetPhotoProfile(ctx *fiber.Ctx) error {
-	response, err := c.AuthUseCase.GetPhotoProfile(ctx.UserContext())
+	result, err := c.AuthUseCase.GetPhotoProfile(ctx.UserContext())
 	if err != nil {
-		return apperror.HandleError(ctx, c.Logger, err)
+		return apperror.HandleError(ctx, c.Log, err)
 	}
-	return ctx.JSON(model.WebResponse[*v4.PresignedHTTPRequest]{Data: response})
+	res := helper.ResponseSuccess(helper.HttpResponseParamSuccess[*v4.PresignedHTTPRequest]{
+		Data: result,
+	})
+	return ctx.JSON(res)
+}
+
+func (c *AuthController) GetAllFirebaseTokenByUserIds(ctx *fiber.Ctx) error {
+	request := new(model.RequestFirebaseToken)
+
+	if err := ctx.BodyParser(request); err != nil {
+		return apperror.HandleError(ctx, c.Log, apperror.NewAppError(http.StatusBadRequest, err.Error()))
+	}
+	if err := c.Validator.Struct(request); err != nil {
+		return apperror.HandleError(ctx, c.Log, err)
+	}
+
+	result, err := c.AuthUseCase.GetAllFirebaseTokenByUserIds(ctx.UserContext(), request.UserIds)
+	if err != nil {
+		return apperror.HandleError(ctx, c.Log, err)
+	}
+
+	res := helper.ResponseSuccess(helper.HttpResponseParamSuccess[[]model.DataFirebaseToken]{
+		Data: result,
+	})
+	return ctx.JSON(res)
+}
+
+func (c *AuthController) GenerateOtp(ctx *fiber.Ctx) error {
+	authJwt, ok := auth.GetUser(ctx)
+	if !ok {
+		return apperror.HandleError(ctx, c.Log, apperror.NewAppError(http.StatusUnauthorized))
+	}
+	result, err := c.AuthUseCase.GenerateOtp(ctx.UserContext(), authJwt)
+	if err != nil {
+		return apperror.HandleError(ctx, c.Log, err)
+	}
+	res := helper.ResponseSuccess(helper.HttpResponseParamSuccess[string]{
+		Data: result,
+	})
+	return ctx.JSON(res)
+}
+
+func (c *AuthController) ValidateOTP(ctx *fiber.Ctx) error {
+	authJwt, ok := auth.GetUser(ctx)
+	if !ok {
+		return apperror.HandleError(ctx, c.Log, apperror.NewAppError(http.StatusUnauthorized))
+	}
+
+	request := new(model.ValidateOTPRequest)
+	request.UserID = authJwt.UserID
+	if err := ctx.BodyParser(request); err != nil {
+		return apperror.HandleError(ctx, c.Log, apperror.NewAppError(http.StatusBadRequest, err.Error()))
+	}
+
+	if err := c.Validator.Struct(request); err != nil {
+		return apperror.HandleError(ctx, c.Log, err)
+	}
+	ok, err := c.AuthUseCase.ValidateOTP(ctx.UserContext(), request)
+	if err != nil {
+		return apperror.HandleError(ctx, c.Log, err)
+	}
+	if !ok {
+		return apperror.HandleError(ctx, c.Log, apperror.NewAppError(http.StatusUnauthorized))
+	}
+	res := helper.ResponseSuccess(helper.HttpResponseParamSuccess[bool]{
+		Data: ok,
+	})
+	return ctx.JSON(res)
 }

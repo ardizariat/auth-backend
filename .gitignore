@@ -13,6 +13,10 @@
 *.so
 *.dylib
 
+docker/development/.env
+docker/production/.env
+docker/staging/.env
+
 # Config ENV
 config.yaml
 config-*.yaml

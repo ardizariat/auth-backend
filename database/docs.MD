@@ -7,13 +7,13 @@
 ## Running migration up
 
 ```go
-  migrate -database "postgres://postgres:postgres@localhost:5432/employees?sslmode=disable" -path db/migrations up
+  migrate -database "postgres://postgres:postgres@localhost:5432/oauth?sslmode=disable" -path database/migrations up
 ```
 
 ## Running migration down
 
 ```go
-  migrate -database "postgres://postgres:postgres@localhost:5432/employees?sslmode=disable" -path db/migrations down
+  migrate -database "postgres://postgres:postgres@localhost:5432/oauth?sslmode=disable" -path database/migrations down
 ```
 
 ## Dirty state

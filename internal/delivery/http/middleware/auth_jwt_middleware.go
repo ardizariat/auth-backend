@@ -37,6 +37,7 @@ func (m *AuthJwtMiddleware) ValidateAccessToken(ctx *fiber.Ctx) error {
 	if err != nil {
 		return ctx.Status(http.StatusUnauthorized).JSON(model.WebResponse[any]{Message: err.Error()})
 	}
+	claims.Token = tokenEncrypt
 	ctx.Locals(constants.AUTH_JWT, claims)
 	return ctx.Next()
 }

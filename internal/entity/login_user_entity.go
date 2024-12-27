@@ -12,9 +12,11 @@ type LoginUser struct {
 	UserID        string    `json:"user_id" gorm:"column:user_id"`
 	UserAgent     string    `json:"user_agent" gorm:"column:user_agent"`
 	IpAddress     string    `json:"ip_address" gorm:"column:ip_address"`
+	Key           string    `json:"key" gorm:"column:key"`
 	FirebaseToken *string   `json:"firebase_token" gorm:"column:firebase_token"`
 	Model         *string   `json:"model" gorm:"column:model"`
 	RefreshToken  *string   `json:"refresh_token" gorm:"column:refresh_token"`
+	IsValidated   bool      `json:"is_validated" gorm:"column:is_validated"`
 	CreatedAt     time.Time `json:"created_at" gorm:"column:created_at;autoCreateTime;<-:create"`
 	UpdatedAt     time.Time `json:"updated_at" gorm:"column:updated_at;autoCreateTime;autoUpdateTime"`
 }

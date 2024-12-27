@@ -1,0 +1,24 @@
+services:
+  auth-backend-development:
+    build:
+        context: ../../
+        dockerfile: docker/development/Dockerfile
+    image: ardizariat/auth-backend-development:1.0
+    container_name: auth-backend-development
+    ports:
+      - "9000:9000"
+    restart: on-failure
+    env_file:
+      - .env
+    networks:
+      - postgres-16_postgres_network
+      - rabbitmq-4_rabbitmq_network
+      - redis_redis_network
+
+networks:
+  postgres-16_postgres_network:
+    external: true
+  rabbitmq-4_rabbitmq_network:
+    external: true
+  redis_redis_network:
+    external: true

@@ -6,10 +6,12 @@ import (
 )
 
 type UserResponse struct {
-	ID       string `json:"id,omitempty"`
-	Name     string `json:"name,omitempty"`
-	Username string `json:"username,omitempty"`
-	Email    string `json:"email,omitempty"`
+	ID            string `json:"id,omitempty"`
+	Name          string `json:"name,omitempty"`
+	Username      string `json:"username,omitempty"`
+	Email         string `json:"email,omitempty"`
+	PersonalEmail string `json:"personal_email,omitempty" gorm:"column:personal_email"`
+	NIP           string `json:"nip,omitempty" gorm:"column:nip"`
 }
 
 type TokenResponse struct {
@@ -27,14 +29,6 @@ type UserLoginResponse struct {
 	Token TokenResponse `json:"token,omitempty"`
 }
 
-type UserProfileResponse struct {
-	ID     string `json:"id,omitempty"`
-	UserID string `json:"user_id,omitempty"`
-	Name   string `json:"name,omitempty"`
-	Email  string `json:"email,omitempty"`
-	Token  string `json:"token,omitempty"`
-}
-
 type UpdatePasswordLoginRequest struct {
 	ID          string `json:"id" validate:"required"`
 	OldPassword string `json:"old_password" validate:"required"`
@@ -42,10 +36,20 @@ type UpdatePasswordLoginRequest struct {
 }
 
 type LoginUserQueryResponse struct {
-	ID     string `json:"id,omitempty"`
-	UserID string `json:"user_id,omitempty"`
-	Name   string `json:"name,omitempty"`
-	Email  string `json:"email,omitempty"`
+	ID            string  `json:"id,omitempty"`
+	UserID        string  `json:"user_id,omitempty"`
+	Name          string  `json:"name,omitempty"`
+	Username      string  `json:"username,omitempty"`
+	Email         string  `json:"email,omitempty"`
+	PersonalEmail *string `json:"personal_email,omitempty"`
+}
+
+type LoginUserByPersonalEmail struct {
+	ID            string  `json:"id,omitempty"`
+	Name          string  `json:"name,omitempty"`
+	Username      string  `json:"username,omitempty"`
+	Email         string  `json:"email,omitempty"`
+	PersonalEmail *string `json:"personal_email,omitempty"`
 }
 
 type LoginUserResponse struct {
@@ -61,6 +65,19 @@ type LoginUserResponse struct {
 type LoginUserRequest struct {
 	User          string  `json:"user" validate:"required,min=3"`
 	Password      string  `json:"password" validate:"required,min=3"`
+	UserAgent     string  `json:"user_agent"`
+	IpAddress     string  `json:"ip_address"`
+	FirebaseToken *string `json:"firebase_token"`
+	Model         *string `json:"model"`
+}
+
+type ValidateOTPRequest struct {
+	OTP    string `json:"otp" validate:"required,min=3"`
+	UserID string `json:"user_id"`
+}
+
+type LoginUserByPersonalEmailRequest struct {
+	PersonalEmail string  `json:"personal_email" validate:"required"`
 	UserAgent     string  `json:"user_agent"`
 	IpAddress     string  `json:"ip_address"`
 	FirebaseToken *string `json:"firebase_token"`
@@ -91,4 +108,13 @@ type UploadPhotoProfile struct {
 type AwsS3UploadMessage struct {
 	FileBuffer []byte `json:"file_buffer"`
 	Directory  string `json:"directory"`
+}
+
+type DataFirebaseToken struct {
+	FirebaseToken string `json:"firebase_token"`
+	Name          string `json:"name"`
+}
+
+type RequestFirebaseToken struct {
+	UserIds []string `json:"user_ids" validate:"required,dive,required"`
 }

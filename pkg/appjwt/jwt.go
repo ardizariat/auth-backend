@@ -1,7 +1,6 @@
 package appjwt
 
 import (
-	"arch/internal/helper"
 	"arch/internal/model"
 	"errors"
 	"time"
@@ -17,12 +16,17 @@ type JwtWrapper struct {
 	ExpirationRefreshToken time.Duration
 }
 
-func (wrapper *JwtWrapper) GenerateToken(ID, secretKey string, expiration time.Duration) (string, error) {
-	// expiresAt := time.Unix(time.Now().Add(expiration).Unix(), 0)
+func (wrapper *JwtWrapper) GenerateToken(payload model.UserProfileResponse, secretKey string, expiration time.Duration) (string, error) {
 	expiresAt := time.Now().Add(expiration)
 
 	claims := &model.JwtClaims{
-		ID: ID,
+		ID:            payload.ID,
+		UserID:        payload.UserID,
+		Name:          payload.Name,
+		Username:      payload.Username,
+		Email:         payload.Email,
+		PersonalEmail: payload.PersonalEmail,
+		NIP:           payload.NIP,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			Issuer:    wrapper.Issuer,
@@ -35,29 +39,30 @@ func (wrapper *JwtWrapper) GenerateToken(ID, secretKey string, expiration time.D
 		return "", err
 	}
 
-	encryptToken, err := helper.Encrypt(signedToken)
-	if err != nil {
-		return "", err
-	}
+	// encryptToken, err := helper.Encrypt(signedToken)
+	// if err != nil {
+	// 	return "", err
+	// }
 
-	return encryptToken, nil
+	return signedToken, nil
 }
 
-func (wrapper *JwtWrapper) GenerateAccessToken(loginUserID string) (string, error) {
-	return wrapper.GenerateToken(loginUserID, wrapper.SecretKeyAccessToken, wrapper.ExpirationAccessToken)
+func (wrapper *JwtWrapper) GenerateAccessToken(payload model.UserProfileResponse) (string, error) {
+	// return wrapper.GenerateToken(payload, wrapper.SecretKeyAccessToken, 10*time.Second)
+	return wrapper.GenerateToken(payload, wrapper.SecretKeyAccessToken, wrapper.ExpirationAccessToken)
 }
 
-func (wrapper *JwtWrapper) GenerateRefreshToken(loginUserID string) (string, error) {
-	return wrapper.GenerateToken(loginUserID, wrapper.SecretKeyRefreshToken, wrapper.ExpirationRefreshToken)
+func (wrapper *JwtWrapper) GenerateRefreshToken(payload model.UserProfileResponse) (string, error) {
+	return wrapper.GenerateToken(payload, wrapper.SecretKeyRefreshToken, wrapper.ExpirationRefreshToken)
 }
 
 func (wrapper *JwtWrapper) ValidateToken(signedToken, secretKey string) (*model.JwtClaims, error) {
-	decryptToken, err := helper.Decrypt(signedToken)
-	if err != nil {
-		return nil, err
-	}
+	// decryptToken, err := helper.Decrypt(signedToken)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	token, err := jwt.ParseWithClaims(decryptToken, &model.JwtClaims{}, func(token *jwt.Token) (any, error) {
+	token, err := jwt.ParseWithClaims(signedToken, &model.JwtClaims{}, func(token *jwt.Token) (any, error) {
 		return []byte(secretKey), nil
 	})
 	if err != nil {
