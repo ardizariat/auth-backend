@@ -51,6 +51,8 @@ func NewFiber(route *route.RouteApp, config *viper.Viper) *fiber.App {
 					"http://localhost:7001",
 					"http://localhost:6001",
 					"http://localhost:9346",
+					"https://dev-kpi.modernland.co.id",
+					"https://dev-auth.modernland.co.id",
 				}, ","),
 				AllowOriginsFunc: nil,
 				AllowCredentials: false,
