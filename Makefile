@@ -68,7 +68,7 @@ build-development: ## Build the development docker image.
 
 .PHONY: start-development
 start-development: ## Start the development docker container.
-	docker compose -f docker/development/docker-compose.yaml up -d
+	docker compose -f docker/development/docker-compose.yaml up -d --force-recreate
 
 .PHONY: stop-development
 stop-development: ## Stop the development docker container.
@@ -80,7 +80,7 @@ build-staging: ## Build the staging docker image.
 
 .PHONY: start-staging
 start-staging: ## Start the staging docker container.
-	docker compose -f docker/staging/docker-compose.yaml up -d
+	docker compose -f docker/staging/docker-compose.yaml up -d --force-recreate
 
 .PHONY: stop-staging
 stop-staging: ## Stop the staging docker container.

@@ -1,10 +1,10 @@
 services:
-  auth-backend-production:
+  auth-backend:
     build:
-        context: ../../
-        dockerfile: docker/production/Dockerfile
-    image: ardizariat/auth-backend:1.0
-    container_name: auth-backend-production
+      context: ../../
+      dockerfile: docker/production/Dockerfile
+    image: ptmodernland/auth-backend:1.0
+    container_name: auth-backend
     ports:
       - "9000:9000"
     restart: on-failure
@@ -13,12 +13,12 @@ services:
     networks:
       - postgres-16_postgres_network
       - rabbitmq-4_rabbitmq_network
-      - redis_redis_network
+      - redis-7_redis_network
 
 networks:
   postgres-16_postgres_network:
     external: true
   rabbitmq-4_rabbitmq_network:
     external: true
-  redis_redis_network:
+  redis-7_redis_network:
     external: true
