@@ -13,6 +13,7 @@
 *.so
 *.dylib
 
+tmp/
 docker/development/.env
 docker/production/.env
 docker/staging/.env
